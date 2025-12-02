@@ -1,6 +1,6 @@
 # GPU Orchestrator
 
-A production-ready GPU job orchestration system for AI/ML workloads with isolated workers, hybrid cloud support, and modern web UIs.
+A GPU job orchestration system for AI/ML workloads with isolated workers, hybrid cloud support, and modern web UIs.
 
 ## What is This?
 
@@ -509,62 +509,9 @@ docker-compose restart orchestrator
 docker-compose up -d
 ```
 
-## Troubleshooting
-
-### Worker Not Registering
-
-```bash
-# Check etcd connection
-docker exec -it etcd etcdctl get "" --prefix
-
-# Check worker logs
-docker-compose logs sdxl-worker
-```
-
-### Jobs Stuck in QUEUED
-
-```bash
-# Check if workers are running
-curl http://localhost:8080/workers
-
-# Check Redis queue depth
-docker exec -it redis redis-cli XLEN jobs:sdxl
-
-# Restart worker
-docker-compose restart sdxl-worker
-```
-
-### GPU Not Detected
-
-```bash
-# Test GPU in worker container
-docker exec sdxl-worker nvidia-smi
-
-# Check docker-compose.yml has:
-deploy:
-  resources:
-    reservations:
-      devices:
-        - driver: nvidia
-          capabilities: [gpu]
-```
-
-### Out of Memory
-
-```bash
-# Monitor GPU usage
-watch -n 1 nvidia-smi
-
-# Reduce model size or batch size in handler.py
-# Or add memory limits in docker-compose.yml
-```
-
 ## Documentation
 
 - **[ADDING_NEW_APPS.md](ADDING_NEW_APPS.md)** - Complete guide to adding workers and frontends
-- **[FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md)** - Frontend design patterns
-- **[WORKER_ISOLATION_STRATEGY.md](WORKER_ISOLATION_STRATEGY.md)** - Why isolated workers
-- **[PHASE3_DEPLOYMENT.md](PHASE3_DEPLOYMENT.md)** - Deployment guide
 
 ## Roadmap
 
@@ -581,21 +528,6 @@ watch -n 1 nvidia-smi
 - [ ] Admin dashboard
 - [ ] API authentication
 
-## Contributing
-
-This is a complete, production-ready system. To extend:
-
-1. Use `./create_new_app.sh` to generate templates
-2. Implement your model logic in `handler.py`
-3. Add dependencies to `requirements.txt`
-4. Update `config/apps.yaml`
-5. Deploy with Docker Compose
-
-## License
-
-MIT License - see LICENSE file
-
-## Acknowledgments
 
 Built with:
 - **Go** - Orchestrator backend
@@ -609,6 +541,3 @@ Built with:
 
 ---
 
-**Production-ready AI/ML job orchestration with isolated workers and modern web UIs.**
-
-For questions or issues, see documentation in `ADDING_NEW_APPS.md`.
