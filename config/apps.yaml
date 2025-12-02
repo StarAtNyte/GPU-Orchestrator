@@ -1,0 +1,80 @@
+apps:
+  # Local GPU Worker Apps
+  - id: "sdxl-image-gen"
+    name: "SDXL Image Generator"
+    type: "local"
+    queue: "jobs:sdxl"
+    description: "Generate high-quality images using Stable Diffusion XL"
+    gpu_vram_gb: 12
+    docker_image: "ghcr.io/myorg/sdxl-worker:latest"
+    parameters:
+      - name: "prompt"
+        type: "string"
+        required: true
+        description: "Text prompt for image generation"
+      - name: "width"
+        type: "integer"
+        default: 1024
+        description: "Image width in pixels"
+      - name: "height"
+        type: "integer"
+        default: 1024
+        description: "Image height in pixels"
+      - name: "num_inference_steps"
+        type: "integer"
+        default: 50
+        description: "Number of denoising steps"
+
+  - id: "z-image"
+    name: "Z-Image Generator"
+    type: "local"
+    queue: "jobs:z-image"
+    description: "Fast image generation with Z-Image Turbo (single-stream diffusion transformer)"
+    gpu_vram_gb: 16
+    docker_image: "gpu-orchestrator-z-image-worker:latest"
+    parameters:
+      - name: "prompt"
+        type: "string"
+        required: true
+        description: "Text description (Chinese or English)"
+      - name: "resolution"
+        type: "string"
+        required: false
+        description: "Image resolution (1024x1024, 576x1024, 896x1200)"
+      - name: "seed"
+        type: "string"
+        required: false
+        description: "Random seed for reproducibility"
+      - name: "steps"
+        type: "string"
+        required: false
+        description: "Inference steps (20-100)"
+      - name: "shift"
+        type: "string"
+        required: false
+        description: "Time shift parameter (1.0-10.0)"
+
+  # Cloud/Modal Apps
+  - id: "panorama-processor"
+    name: "360° Panorama Processor"
+    type: "modal"
+    endpoint: "https://your-org--panorama-processor.modal.run/process"
+    description: "Process panoramic images with rug removal and outpainting"
+    timeout_seconds: 1800
+    parameters:
+      - name: "operation"
+        type: "string"
+        required: true
+        description: "Operation type: 'rug_removal' or 'outpaint'"
+      - name: "image_data"
+        type: "string"
+        required: true
+        description: "Base64 encoded image data"
+      - name: "prompt"
+        type: "string"
+        required: false
+        description: "Custom prompt for the operation"
+      - name: "guidance_scale"
+        type: "float"
+        default: 7.5
+        description: "Guidance scale for generation"

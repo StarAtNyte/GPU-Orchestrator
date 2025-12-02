@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package worker;
+
+option go_package = "./pb";
+
+message JobRequest {
+  string job_id = 1;
+  string app_id = 2;      // Changed from model_id to app_id (e.g., "sdxl-local", "whisper-cloud")
+  string handler_type = 3; // "local_gpu" or "cloud_http"
+  
+  // Instead of hardcoding width/height, we use a map.
+  // The worker is responsible for parsing these (e.g., "1024" -> int).
+  map<string, string> params = 4; 
+}

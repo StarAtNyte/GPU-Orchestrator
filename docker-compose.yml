@@ -1,0 +1,154 @@
+services:
+  redis:
+    image: redis:7.2
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - '16379:6379'
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - redis-data:/data
+
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - '15432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: etcd
+    restart: unless-stopped
+    environment:
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    ports:
+      - '12379:2379'
+
+  orchestrator:
+    image: golang:1.22
+    container_name: orchestrator
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      etcd:
+        condition: service_started
+    environment:
+      - REDIS_URL=redis:6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - ETCD_ENDPOINT=etcd:2379
+      - APP_REGISTRY_PATH=/app/config/apps.yaml
+    volumes:
+      - ./config:/app/config:ro
+    ports:
+      - '8080:8080'
+    restart: unless-stopped
+
+  gpu-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: gpu-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      etcd:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - ETCD_HOST=etcd
+      - ETCD_PORT=2379
+      - MODEL_DIR=/models
+      - WORKER_ID=gpu-worker-1
+    volumes:
+      - ./worker/models:/models
+    ports:
+      - '8000:8000'
+    deploy:
+      resources: {}
+    # Enable GPU access (compose v2/v2.4+ / docker compose with GPU support)
+    gpus: all
+
+  z-image-worker:
+    build:
+      context: .
+      dockerfile: worker/z-image_worker/Dockerfile
+    container_name: z-image-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      etcd:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - ETCD_HOST=etcd
+      - ETCD_PORT=2379
+      - WORKER_ID=z-image-worker-1
+      - MODEL_DIR=/models
+      - HF_TOKEN=${HF_TOKEN}  # For downloading Z-Image model
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    volumes:
+      - ./worker/shared:/app/shared:ro
+      - z-image-models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              # device_ids: ['0']  # Pin to specific GPU
+
+  # Z-Image Frontend (web UI)
+  z-image-ui:
+    build:
+      context: frontends/z-image-ui
+    container_name: z-image-ui
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8080
+    ports:
+      - "7861:7861"
+        
+volumes:
+  redis-data:
+  postgres-data:
+  z-image-models:
+  

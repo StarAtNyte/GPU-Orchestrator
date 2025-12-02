@@ -1,0 +1,25 @@
+# Redis and Protobuf (core dependencies)
+redis==5.0.1
+protobuf==4.25.1
+
+# PyTorch (GPU support)
+# Install from https://pytorch.org/get-started/locally/ for your CUDA version
+# For CUDA 12.1:
+torch
+torchvision
+numpy<2
+
+# Diffusers and dependencies
+diffusers==0.25.0
+transformers==4.36.2
+accelerate==0.25.0
+huggingface_hub<0.25.0
+
+# Image processing
+Pillow==10.1.0
+
+# Safety and optimization
+safetensors==0.4.1
+
+# Optional: For better performance
+# xformers==0.0.23  # Faster attention (requires compilation, optional)

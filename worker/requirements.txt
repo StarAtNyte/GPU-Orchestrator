@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+redis
+grpcio
+protobuf==3.20.3
+psycopg2-binary
+aiofiles
+etcd3
+# Optional heavy deps (comment in if you plan to use them)
+# torch
+# transformers
+# diffusers
+# vllm

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDXL Image Generator</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SDXL Image Generator</h1>
+            <div class="status-bar">
+                <div class="status-indicator" id="orchestrator-status">
+                    <span class="dot"></span>
+                    <span class="label">Orchestrator</span>
+                </div>
+                <div class="workers-count" id="workers-count">
+                    <span class="count">0</span>
+                    <span class="label">Workers Active</span>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="generator-panel">
+                <form id="generate-form">
+                    <div class="form-group">
+                        <label for="prompt">Prompt</label>
+                        <textarea
+                            id="prompt"
+                            name="prompt"
+                            rows="3"
+                            placeholder="A serene landscape with mountains at sunset..."
+                            required
+                        ></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="negative-prompt">Negative Prompt</label>
+                        <textarea
+                            id="negative-prompt"
+                            name="negative_prompt"
+                            rows="2"
+                            placeholder="blurry, low quality, distorted..."
+                        ></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="width">Width</label>
+                            <select id="width" name="width">
+                                <option value="512">512</option>
+                                <option value="768">768</option>
+                                <option value="1024" selected>1024</option>
+                                <option value="1280">1280</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="height">Height</label>
+                            <select id="height" name="height">
+                                <option value="512">512</option>
+                                <option value="768">768</option>
+                                <option value="1024" selected>1024</option>
+                                <option value="1280">1280</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="steps">Inference Steps</label>
+                            <div class="slider-group">
+                                <input
+                                    type="range"
+                                    id="steps"
+                                    name="num_inference_steps"
+                                    min="20"
+                                    max="100"
+                                    value="50"
+                                >
+                                <span class="slider-value" id="steps-value">50</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="guidance">Guidance Scale</label>
+                            <div class="slider-group">
+                                <input
+                                    type="range"
+                                    id="guidance"
+                                    name="guidance_scale"
+                                    min="1"
+                                    max="20"
+                                    step="0.5"
+                                    value="7.5"
+                                >
+                                <span class="slider-value" id="guidance-value">7.5</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="seed">Seed (optional)</label>
+                        <input
+                            type="number"
+                            id="seed"
+                            name="seed"
+                            placeholder="Random seed (leave empty for random)"
+                        >
+                    </div>
+
+                    <button type="submit" class="btn-generate" id="generate-btn">
+                        <span class="btn-text">Generate Image</span>
+                        <span class="btn-loader"></span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="results-panel">
+                <div class="empty-state" id="empty-state">
+                    <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+                        <rect x="20" y="20" width="80" height="80" rx="8" stroke="currentColor" stroke-width="2"/>
+                        <path d="M30 70L45 55L60 70L85 45L90 50" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="45" cy="42" r="6" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    <p>Your generated images will appear here</p>
+                </div>
+
+                <div class="job-status" id="job-status" style="display: none;">
+                    <div class="status-header">
+                        <h3>Job Status</h3>
+                        <span class="job-id" id="current-job-id"></span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <p class="status-text" id="status-text">Initializing...</p>
+                </div>
+
+                <div class="image-result" id="image-result" style="display: none;">
+                    <img id="result-image" src="" alt="Generated image">
+                    <div class="image-actions">
+                        <button class="btn-secondary" id="download-btn">Download</button>
+                        <button class="btn-secondary" id="new-generation-btn">Generate Another</button>
+                    </div>
+                    <div class="job-metadata" id="job-metadata"></div>
+                </div>
+
+                <div class="error-state" id="error-state" style="display: none;">
+                    <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
+                        <circle cx="30" cy="30" r="25" stroke="currentColor" stroke-width="2"/>
+                        <path d="M30 20V35M30 42V42.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+                    </svg>
+                    <h3>Generation Failed</h3>
+                    <p id="error-message"></p>
+                    <button class="btn-secondary" id="retry-btn">Try Again</button>
+                </div>
+            </div>
+        </main>
+
+        <div class="history-panel" id="history-panel">
+            <h3>Recent Generations</h3>
+            <div class="history-grid" id="history-grid">
+                <!-- History items will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
