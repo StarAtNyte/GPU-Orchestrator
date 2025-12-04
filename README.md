@@ -308,27 +308,21 @@ GROUP BY app_id, status;
 
 ## Available Applications
 
-### SDXL Image Generation
+### Z-Image Image Generation
 
-**Worker**: `worker/sdxl-image-gen_worker/`
-**Frontend**: `frontends/sdxl-ui/` (Port 7861)
-**GPU**: Required (8GB VRAM)
+**Worker**: `worker/z-image_worker/`
+**Frontend**: `frontends/z-image-ui/` (Port 7861)
+**GPU**: Required (20GB VRAM)
 
 Generate high-quality images from text prompts.
 
-### Whisper Speech-to-Text
+### SDXL Image Generation
 
-**Worker**: `worker/whisper-stt_worker/`
-**GPU**: Optional (CPU mode available)
+**Worker**: `worker/sdxl_worker/`
+**Frontend**: `frontends/sdxl-ui/` (Port 7862)
+**GPU**: Required (8GB VRAM)
 
-Transcribe audio files to text.
-
-### LLaMA 3 Chat
-
-**Worker**: `worker/llama3-chat_worker/`
-**GPU**: Required (24GB VRAM for 8B model)
-
-Conversational AI using Meta's LLaMA 3.
+Generate high-quality images from text prompts.
 
 ## Configuration
 
