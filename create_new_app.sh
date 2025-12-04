@@ -149,7 +149,7 @@ EOF
 
     echo -e "${GREEN}✓${NC} Updated config/apps.yaml"
 
-    # Print docker-compose snippet
+    # Print docker compose snippet
     echo ""
     echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}  Isolated Worker Created Successfully!${NC}"
@@ -175,7 +175,7 @@ EOF
     echo "     transformers>=4.36.0   # For HuggingFace models"
     echo "     vllm>=0.3.0            # For LLM inference"
     echo ""
-    echo "3. Add this service to docker-compose.yml:"
+    echo "3. Add this service to docker compose.yml:"
     echo ""
     echo -e "${BLUE}─────────────────────────────────────────────────────${NC}"
     cat << COMPOSE_YAML
@@ -216,15 +216,15 @@ EOF
 COMPOSE_YAML
     echo -e "${BLUE}─────────────────────────────────────────────────────${NC}"
     echo ""
-    echo "4. Add volume for model cache in docker-compose.yml:"
+    echo "4. Add volume for model cache in docker compose.yml:"
     echo ""
     echo "   volumes:"
     echo "     ${APP_NAME}-models:"
     echo ""
     echo "5. Build and start the worker:"
-    echo "   docker-compose build ${APP_NAME}-worker"
-    echo "   docker-compose up -d ${APP_NAME}-worker"
-    echo "   docker-compose restart orchestrator  # Reload app registry"
+    echo "   docker compose build ${APP_NAME}-worker"
+    echo "   docker compose up -d ${APP_NAME}-worker"
+    echo "   docker compose restart orchestrator  # Reload app registry"
     echo ""
     echo "6. Test your worker:"
     echo "   curl -X POST http://localhost:8080/submit \\"
@@ -232,7 +232,7 @@ COMPOSE_YAML
     echo "     -d '{\"app_id\":\"$APP_ID\",\"params\":{\"input\":\"test\"}}'"
     echo ""
     echo "7. Monitor logs:"
-    echo "   docker-compose logs -f ${APP_NAME}-worker orchestrator"
+    echo "   docker compose logs -f ${APP_NAME}-worker orchestrator"
     echo ""
     echo -e "${GREEN}✓ Each app runs in its own container = no dependency conflicts!${NC}"
 
@@ -454,7 +454,7 @@ EOF
     echo "   endpoint: \"https://your-org--${APP_NAME}.modal.run/process\""
     echo ""
     echo "7. Restart orchestrator to reload config:"
-    echo "   docker-compose restart orchestrator"
+    echo "   docker compose restart orchestrator"
     echo ""
     echo "8. Test your endpoint:"
     echo "   curl -X POST http://localhost:8080/submit \\"
@@ -1142,7 +1142,7 @@ EOF
     echo "   - Modify ProcessRequest model with your parameters"
     echo "   - Update /api/process endpoint to send correct params"
     echo ""
-    echo "3. Add to docker-compose.yml:"
+    echo "3. Add to docker compose.yml:"
     echo ""
     echo -e "${BLUE}─────────────────────────────────────────────────────${NC}"
     cat << COMPOSE_YAML
@@ -1161,8 +1161,8 @@ COMPOSE_YAML
     echo -e "${BLUE}─────────────────────────────────────────────────────${NC}"
     echo ""
     echo "4. Build and start the frontend:"
-    echo "   docker-compose build ${APP_NAME}"
-    echo "   docker-compose up -d ${APP_NAME}"
+    echo "   docker compose build ${APP_NAME}"
+    echo "   docker compose up -d ${APP_NAME}"
     echo ""
     echo "5. Access the UI:"
     echo "   http://localhost:7861"

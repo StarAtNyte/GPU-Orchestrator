@@ -1,4 +1,4 @@
-# Dockerfile for SDXL Worker
+# Dockerfile for {{APP_NAME}} Worker
 
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
@@ -24,7 +24,7 @@ WORKDIR /app
 COPY worker/shared/ /app/shared/
 
 # Copy worker-specific code
-COPY worker/sdxl_worker/ /app/worker/
+COPY worker/{{WORKER_DIR}}/ /app/worker/
 
 # Install dependencies
 RUN pip3 install --no-cache-dir -r /app/worker/requirements.txt
@@ -35,6 +35,5 @@ RUN mkdir -p /models /app/outputs
 ENV HF_HOME=/models
 ENV TRANSFORMERS_CACHE=/models
 ENV MODEL_DIR=/models
-ENV PYTHONPATH=/app:$PYTHONPATH
 
 CMD ["python3", "/app/worker/main.py"]

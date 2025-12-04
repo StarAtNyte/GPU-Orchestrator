@@ -140,7 +140,7 @@ async def generate(request: GenerateRequest):
                     "shift": str(request.shift)
                 }
             },
-            timeout=10
+            timeout=240  # 4 minutes to allow for model loading on cold start
         )
 
         if response.status_code == 200:

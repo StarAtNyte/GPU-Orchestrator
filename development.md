@@ -1416,7 +1416,7 @@ This option runs services locally for development.
 Start Redis, PostgreSQL, and etcd:
 
 ```bash
-docker-compose up redis postgres etcd
+docker compose up redis postgres etcd
 ```
 
 Wait for:
@@ -1472,7 +1472,7 @@ Expected output:
 Run everything in Docker (recommended for production-like testing):
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 This starts all services (redis, postgres, etcd, orchestrator, worker).
@@ -1723,7 +1723,7 @@ docker exec -it redis redis-cli
 
 **Solution:** Ensure PostgreSQL is running and accessible:
 ```bash
-docker-compose up postgres
+docker compose up postgres
 # Wait for: "database system is ready to accept connections"
 ```
 
@@ -1733,7 +1733,7 @@ docker-compose up postgres
 
 **Solution:** Check etcd is running:
 ```bash
-docker-compose up etcd
+docker compose up etcd
 curl http://localhost:2379/version
 ```
 
@@ -1840,7 +1840,7 @@ POSTGRES_DB=gpu_orchestrator
 
 2. **Build and Start All Services**:
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 This will start:
@@ -1853,7 +1853,7 @@ This will start:
 3. **Verify App Registry Loaded**:
 Check the orchestrator logs:
 ```bash
-docker-compose logs orchestrator | grep "Loaded app"
+docker compose logs orchestrator | grep "Loaded app"
 ```
 
 You should see:
@@ -1924,7 +1924,7 @@ curl -X POST http://localhost:8080/submit \
 **Check Logs**:
 ```bash
 # Orchestrator logs
-docker-compose logs -f orchestrator
+docker compose logs -f orchestrator
 
 # Look for:
 # ☁️ [Modal] Proxying job <uuid> to https://...modal.run/process
@@ -1971,7 +1971,7 @@ Edit `config/apps.yaml`:
 
 Restart the orchestrator:
 ```bash
-docker-compose restart orchestrator
+docker compose restart orchestrator
 ```
 
 ### Adding a New Cloud App
@@ -2054,7 +2054,7 @@ modal logs panorama-processor
 **Solution**:
 1. Check worker is registered: `curl http://localhost:8080/workers`
 2. Check Redis stream: `docker exec -it redis redis-cli XLEN jobs:sdxl`
-3. View worker logs: `docker-compose logs gpu-worker`
+3. View worker logs: `docker compose logs gpu-worker`
 
 ## Next Steps (Phase 4)
 

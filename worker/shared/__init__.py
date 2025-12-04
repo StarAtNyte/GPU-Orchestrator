@@ -8,3 +8,7 @@ This module provides common functionality:
 """
 
 __version__ = "1.0.0"
+__all__ = ['worker_pb2']
+
+# Import after defining package metadata
+from . import worker_pb2

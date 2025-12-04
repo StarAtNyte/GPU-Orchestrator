@@ -1,21 +1,17 @@
 import torch
-from diffusers import FlowMatchEulerDiscreteScheduler, ZImagePipeline
+from diffusers import StableDiffusionXLPipeline
 import logging
 import base64
 from io import BytesIO
 from typing import Dict, Any
-import re
 import os
 import gc
 import time
 import threading
 
-# Set CUDA memory allocation configuration
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
 logger = logging.getLogger(__name__)
 
-class ZImageHandler:
+class SDXLHandler:
     def __init__(self):
         self.pipe = None
         self.device = "cuda"
@@ -24,29 +20,28 @@ class ZImageHandler:
         self.cleanup_delay = 300  # 5 minutes in seconds
 
     def load_model(self):
-        """Load Z-Image model, keeping it cached for reuse."""
+        """Load SDXL model, keeping it cached for reuse."""
         if self.pipe is not None:
-            logger.info("Z-Image model already loaded, reusing...")
+            logger.info("SDXL model already loaded, reusing...")
             return
 
-        logger.info("Loading Z-Image Turbo model to GPU...")
+        logger.info("Loading SDXL model to GPU...")
 
-        self.pipe = ZImagePipeline.from_pretrained(
-            "Tongyi-MAI/Z-Image-Turbo",
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
+        self.pipe = StableDiffusionXLPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            torch_dtype=torch.float16,
+            use_safetensors=True,
+            variant="fp16"
         )
 
         # Move to GPU
         self.pipe = self.pipe.to(self.device)
 
-        # Enable VAE tiling to reduce memory usage during decoding
-        self.pipe.vae.enable_tiling()
+        # Enable memory optimizations
+        self.pipe.enable_vae_slicing()
+        self.pipe.enable_vae_tiling()
 
-        # Enable VAE slicing for even lower memory usage
-        self.pipe.vae.enable_slicing()
-
-        logger.info("Z-Image loaded successfully")
+        logger.info("SDXL loaded successfully")
 
     def offload_model(self):
         """Completely remove model from GPU to free memory."""
@@ -54,7 +49,7 @@ class ZImageHandler:
             logger.info("No model loaded, nothing to offload")
             return
 
-        logger.info("Removing Z-Image model from GPU...")
+        logger.info("Removing SDXL model from GPU...")
 
         # Cancel any pending cleanup timer
         if self.cleanup_timer:
@@ -71,7 +66,7 @@ class ZImageHandler:
         torch.cuda.synchronize()
         gc.collect()
 
-        logger.info("Z-Image model removed from GPU - memory freed")
+        logger.info("SDXL model removed from GPU - memory freed")
 
     def _schedule_cleanup(self):
         """Schedule model cleanup after delay."""
@@ -92,61 +87,49 @@ class ZImageHandler:
             self.cleanup_timer = None
             logger.info("Cancelled scheduled GPU cleanup")
 
-    def get_resolution(self, resolution_str):
-        """Parse resolution string like '1024x1024' or '576x1024'."""
-        match = re.search(r"(\d+)\s*[×x]\s*(\d+)", resolution_str)
-        if match:
-            return int(match.group(1)), int(match.group(2))
-        return 1024, 1024
-
     def process(self, job_id: str, params: Dict[str, str]) -> Dict[str, Any]:
         """Process a single image generation job."""
         try:
             # Cancel any scheduled cleanup since we have a new job
             self.cancel_cleanup()
 
+            # Load model (will reuse if already loaded)
             self.load_model()
 
-            # Extract parameters
+            # Extract parameters with defaults
             prompt = params.get("prompt", "")
-            resolution = params.get("resolution", "1024x1024")
+            negative_prompt = params.get("negative_prompt", "")
+            width = int(params.get("width", "1024"))
+            height = int(params.get("height", "1024"))
+            num_inference_steps = int(params.get("num_inference_steps", "50"))
+            guidance_scale = float(params.get("guidance_scale", "7.5"))
             seed = int(params.get("seed", "42"))
-            steps = int(params.get("steps", "9"))
-            shift = float(params.get("shift", "3.0"))
 
-            width, height = self.get_resolution(resolution)
-
-            logger.info(f"RECEIVED PARAMS: steps={steps}, shift={shift}, seed={seed}")
-            logger.info(f"Generating Z-Image: {prompt[:50]}... ({width}x{height})")
+            logger.info(f"Generating SDXL image: {prompt[:50]}... ({width}x{height})")
+            logger.info(f"Steps: {num_inference_steps}, Guidance: {guidance_scale}, Seed: {seed}")
 
             # Clear cache before generation
             torch.cuda.empty_cache()
 
-            # Setup generator and scheduler
+            # Setup generator
             generator = torch.Generator(self.device).manual_seed(seed)
-            scheduler = FlowMatchEulerDiscreteScheduler(
-                num_train_timesteps=1000,
-                shift=shift
-            )
-            self.pipe.scheduler = scheduler
 
             # Generate image
             try:
                 image = self.pipe(
                     prompt=prompt,
+                    negative_prompt=negative_prompt if negative_prompt else None,
                     height=height,
                     width=width,
-                    guidance_scale=0.0,  # Z-Image Turbo doesn't use guidance
-                    num_inference_steps=steps,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
                     generator=generator,
-                    max_sequence_length=512,
                 ).images[0]
             finally:
-                # Aggressively free CUDA memory after generation
+                # Free CUDA memory after generation
                 del generator
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
-                # Force garbage collection
                 gc.collect()
 
             # Convert to base64
@@ -154,7 +137,7 @@ class ZImageHandler:
             image.save(buffered, format="PNG")
             image_b64 = base64.b64encode(buffered.getvalue()).decode()
 
-            # Cleanup - clear CUDA cache after conversion
+            # Cleanup
             del image
             del buffered
             torch.cuda.empty_cache()
@@ -173,7 +156,8 @@ class ZImageHandler:
                     "width": width,
                     "height": height,
                     "seed": seed,
-                    "steps": steps
+                    "steps": num_inference_steps,
+                    "guidance_scale": guidance_scale
                 }
             }
 

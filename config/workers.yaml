@@ -1,0 +1,31 @@
+# Worker definitions with resource requirements
+workers:
+  z-image-worker:
+    app_id: "z-image"
+    queue: "jobs:z-image"
+    vram_required_gb: 16
+    startup_time_seconds: 30
+    shutdown_time_seconds: 10
+
+  sdxl-worker:
+    app_id: "sdxl-image-gen"
+    queue: "jobs:sdxl"
+    vram_required_gb: 12
+    startup_time_seconds: 45
+    shutdown_time_seconds: 10
+
+# Global settings
+settings:
+  # Only one worker can be active at a time
+  exclusive_mode: true
+
+  # How long to wait before stopping idle worker (seconds)
+  # Set to 0 to stop immediately after job completes
+  # Set to 300 to keep worker alive for 5 minutes
+  idle_timeout: 300
+
+  # Maximum time to wait for worker startup
+  max_startup_wait: 120
+
+  # Maximum time to wait for worker shutdown
+  max_shutdown_wait: 30

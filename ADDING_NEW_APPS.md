@@ -55,9 +55,167 @@ This architecture provides:
 
 ---
 
-## Quick Start with Generator
+## Quick Start with Template System
 
-The fastest way to create a new application:
+The **fastest way** to create a new worker using our template system:
+
+```bash
+# One command to scaffold everything!
+./create_worker.sh whisper
+
+# What you get:
+# ✅ worker/whisper_worker/handler.py - Model logic template
+# ✅ worker/whisper_worker/main.py - Complete worker loop with Redis/PostgreSQL/etcd
+# ✅ worker/whisper_worker/Dockerfile - Ready-to-build container
+# ✅ worker/whisper_worker/requirements.txt - Core dependencies included
+# ✅ worker/whisper_worker/models/.gitkeep - Model cache directory
+
+# The script even prints your next steps!
+```
+
+### Template-Based Workflow
+
+**Step 1: Generate Worker**
+```bash
+./create_worker.sh your-worker-name
+```
+
+**Step 2: Implement Your Model Logic**
+
+Edit `worker/your-worker-name_worker/handler.py`:
+```python
+def load_model(self):
+    """Load your model once, cache for future requests."""
+    if self.model is not None:
+        return
+
+    # Your model loading code here
+    self.model = YourModel.from_pretrained("model-name")
+
+def process(self, job_id: str, params: Dict[str, str]) -> Dict[str, Any]:
+    """Process a single job."""
+    self.load_model()
+
+    # Your processing logic here
+    result = self.model.process(params.get("input"))
+
+    return {
+        "success": True,
+        "output": {"result": result}
+    }
+```
+
+**Step 3: Add Dependencies**
+
+Edit `worker/your-worker-name_worker/requirements.txt`:
+```txt
+# Core dependencies (already included)
+redis==5.0.1
+async-timeout>=4.0.0
+protobuf==3.20.3
+psycopg2-binary==2.9.9
+etcd3==0.12.0
+
+# Add your model-specific dependencies
+transformers
+diffusers
+# etc.
+```
+
+**Step 4: Add to Config**
+
+The script prints the exact YAML to add to `config/apps.yaml` and `config/workers.yaml`:
+
+```yaml
+# config/apps.yaml
+  - id: "your-worker-name"
+    name: "Your Worker Name"
+    type: "local"
+    queue: "jobs:your-worker-name"
+    description: "Description of your worker"
+    gpu_vram_gb: 12
+    parameters:
+      - name: "input"
+        type: "string"
+        required: true
+        description: "Your input parameter"
+```
+
+```yaml
+# config/workers.yaml
+  your-worker-name-worker:
+    app_id: "your-worker-name"
+    queue: "jobs:your-worker-name"
+    vram_required_gb: 12
+    startup_time_seconds: 30
+    shutdown_time_seconds: 10
+```
+
+**Step 5: Add to Docker Compose**
+
+The script also prints the exact docker compose config:
+
+```yaml
+# docker-compose.yml
+  your-worker-name-worker:
+    build:
+      context: .
+      dockerfile: worker/your-worker-name_worker/Dockerfile
+    container_name: your-worker-name-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      etcd:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - ETCD_HOST=etcd
+      - ETCD_PORT=2379
+      - WORKER_ID=your-worker-name-worker-1
+      - MODEL_DIR=/models
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ./worker/shared:/app/shared:ro
+      - your-worker-name-models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
+# Don't forget to add the volume:
+volumes:
+  your-worker-name-models:
+```
+
+**Step 6: Build and Test**
+
+```bash
+# Build the worker
+docker compose build your-worker-name-worker
+
+# Start it
+docker compose up -d your-worker-name-worker
+
+# Test with a job
+./scripts/submit_job.sh your-worker-name '{"input": "test"}'
+
+# Monitor the job
+./scripts/monitor_job.sh <job-id>
+```
+
+### Legacy Method (create_new_app.sh)
+
+The old method still works if you need frontends:
 
 ```bash
 # Step 1: Create worker (GPU container)
@@ -68,9 +226,13 @@ The fastest way to create a new application:
 
 # Step 3: Implement worker logic in worker/my-app_worker/handler.py
 # Step 4: Customize frontend in frontends/my-app-ui/
-# Step 5: Add both to docker-compose.yml
+# Step 5: Add both to docker compose.yml
 # Step 6: Deploy!
 ```
+
+**Recommendation**: Use `create_worker.sh` for workers, `create_new_app.sh` for frontends.
+
+---
 
 Let's see complete examples:
 
@@ -439,7 +601,7 @@ apps:
 
 ### Step 7: Add to Docker Compose
 
-Edit `docker-compose.yml`:
+Edit `docker compose.yml`:
 
 ```yaml
   # Z-Image Worker (GPU container)
@@ -523,7 +685,7 @@ docker compose logs -f z-image-worker z-image-ui
 Open http://localhost:7861 in your browser!
 
 You'll see:
-- Modern dark theme interface
+- Modern interface
 - Prompt input (supports Chinese & English)
 - Resolution selector (1024x1024, 576x1024, 896x1200)
 - Steps and shift sliders
@@ -531,7 +693,6 @@ You'll see:
 - Real-time job status
 - Image preview
 - Download button
-- Generation history
 
 ### Example Prompts
 
@@ -744,7 +905,7 @@ Add to `config/apps.yaml`:
     gpu_vram_gb: 0  # CPU-only!
 ```
 
-Add to `docker-compose.yml`:
+Add to `docker compose.yml`:
 
 ```yaml
   whisper-worker:
@@ -792,9 +953,9 @@ volumes:
 ### Step 8: Deploy
 
 ```bash
-docker-compose build whisper-worker whisper-ui
-docker-compose up -d whisper-worker whisper-ui
-docker-compose restart orchestrator
+docker compose build whisper-worker whisper-ui
+docker compose up -d whisper-worker whisper-ui
+docker compose restart orchestrator
 ```
 
 Access at http://localhost:7862
@@ -814,7 +975,7 @@ Conversational AI with chat interface.
 
 # Implement vLLM handler in worker/llama3-chat_worker/handler.py
 # Customize chat UI in frontends/llama-chat-ui/
-# Add to docker-compose.yml with port 7863
+# Add to docker compose.yml with port 7863
 ```
 
 Key differences:
@@ -909,27 +1070,27 @@ vim frontends/z-image-ui/templates/index.html
 **Step 2: Rebuild the Worker**
 ```bash
 # Stop, rebuild, and start worker
-docker-compose stop z-image-worker
-docker-compose build z-image-worker
-docker-compose up -d z-image-worker
+docker compose stop z-image-worker
+docker compose build z-image-worker
+docker compose up -d z-image-worker
 
 # Verify it's running the new code
-docker-compose logs -f z-image-worker
+docker compose logs -f z-image-worker
 ```
 
 **Step 3: Restart the Frontend**
 ```bash
 # Frontend changes usually just need a restart
-docker-compose restart z-image-ui
+docker compose restart z-image-ui
 
 # But if you changed requirements.txt or Dockerfile:
-docker-compose up -d --build z-image-ui
+docker compose up -d --build z-image-ui
 ```
 
 **Step 4: Verify**
 ```bash
 # Check all services are running
-docker-compose ps
+docker compose ps
 
 # Test in browser
 # Open http://localhost:7861
@@ -940,9 +1101,9 @@ docker-compose ps
 **Scenario 1: Changed worker handler.py**
 ```bash
 # Worker processes job logic, needs full rebuild
-docker-compose stop z-image-worker
-docker-compose build z-image-worker
-docker-compose up -d z-image-worker
+docker compose stop z-image-worker
+docker compose build z-image-worker
+docker compose up -d z-image-worker
 
 # IMPORTANT: Just running 'up -d' won't use the new image!
 # Must explicitly rebuild or use --build flag
@@ -951,7 +1112,7 @@ docker-compose up -d z-image-worker
 **Scenario 2: Changed frontend HTML/CSS/JS**
 ```bash
 # Static files, just restart container
-docker-compose restart z-image-ui
+docker compose restart z-image-ui
 
 # Verify: Force refresh browser (Ctrl+Shift+R)
 ```
@@ -960,23 +1121,23 @@ docker-compose restart z-image-ui
 ```bash
 # Edited requirements.txt
 # Need clean rebuild to install new packages
-docker-compose stop z-image-worker
-docker-compose build --no-cache z-image-worker
-docker-compose up -d z-image-worker
+docker compose stop z-image-worker
+docker compose build --no-cache z-image-worker
+docker compose up -d z-image-worker
 ```
 
 **Scenario 4: Changed config/apps.yaml**
 ```bash
 # Orchestrator reads this at startup
-docker-compose restart orchestrator
+docker compose restart orchestrator
 ```
 
 **Scenario 5: Changed both worker and frontend**
 ```bash
 # Rebuild both together
-docker-compose stop z-image-worker z-image-ui
-docker-compose build z-image-worker z-image-ui
-docker-compose up -d z-image-worker z-image-ui
+docker compose stop z-image-worker z-image-ui
+docker compose build z-image-worker z-image-ui
+docker compose up -d z-image-worker z-image-ui
 ```
 
 ### Critical Deployment Gotchas
@@ -984,29 +1145,29 @@ docker-compose up -d z-image-worker z-image-ui
 ⚠️ **GOTCHA #1: Container Not Restarted**
 ```bash
 # This builds the image but doesn't restart the container:
-docker-compose build z-image-worker
-docker-compose up -d z-image-worker  # ← Won't restart if already running!
+docker compose build z-image-worker
+docker compose up -d z-image-worker  # ← Won't restart if already running!
 
 # Solution: Use --force-recreate or restart explicitly
-docker-compose up -d --force-recreate z-image-worker
+docker compose up -d --force-recreate z-image-worker
 # OR
-docker-compose stop z-image-worker && docker-compose up -d z-image-worker
+docker compose stop z-image-worker && docker compose up -d z-image-worker
 ```
 
 ⚠️ **GOTCHA #2: Docker Build Cache**
 ```bash
 # Sometimes Docker caches old code
 # Force clean rebuild with:
-docker-compose build --no-cache z-image-worker
+docker compose build --no-cache z-image-worker
 ```
 
 ⚠️ **GOTCHA #3: Background Build Jobs**
 ```bash
 # If you ran build in background, wait for it to complete:
-docker-compose build z-image-worker
+docker compose build z-image-worker
 
 # Then restart:
-docker-compose restart z-image-worker
+docker compose restart z-image-worker
 
 # Check the image was updated:
 docker images | grep z-image-worker
@@ -1015,36 +1176,36 @@ docker images | grep z-image-worker
 ⚠️ **GOTCHA #4: Shared Volumes**
 ```bash
 # Changes to shared/ require rebuilding ALL workers
-docker-compose stop gpu-worker z-image-worker
-docker-compose build gpu-worker z-image-worker
-docker-compose up -d gpu-worker z-image-worker
+docker compose stop gpu-worker z-image-worker
+docker compose build gpu-worker z-image-worker
+docker compose up -d gpu-worker z-image-worker
 ```
 
 ### Quick Command Reference
 
 ```bash
 # Worker code changed
-docker-compose up -d --build z-image-worker
+docker compose up -d --build z-image-worker
 
 # Frontend HTML/CSS/JS changed
-docker-compose restart z-image-ui
+docker compose restart z-image-ui
 
 # Frontend Python code changed
-docker-compose up -d --build z-image-ui
+docker compose up -d --build z-image-ui
 
 # Requirements changed
-docker-compose build --no-cache z-image-worker
-docker-compose up -d --force-recreate z-image-worker
+docker compose build --no-cache z-image-worker
+docker compose up -d --force-recreate z-image-worker
 
 # Orchestrator changed
-docker-compose up -d --build orchestrator
+docker compose up -d --build orchestrator
 
 # Config changed
-docker-compose restart orchestrator
+docker compose restart orchestrator
 
 # Everything changed (nuclear option)
-docker-compose build --no-cache
-docker-compose up -d --force-recreate
+docker compose build --no-cache
+docker compose up -d --force-recreate
 ```
 
 ### Testing Your Deployment
@@ -1053,11 +1214,11 @@ After deploying changes, verify they're active:
 
 ```bash
 # 1. Check container is running new image
-docker-compose ps z-image-worker
+docker compose ps z-image-worker
 # Look at "Created" timestamp
 
 # 2. Check logs for startup messages
-docker-compose logs -f z-image-worker
+docker compose logs -f z-image-worker
 # Should see "Loading Z-Image Turbo model..." with new code
 
 # 3. Submit a test job
@@ -1077,18 +1238,18 @@ If your changes break something:
 ```bash
 # Option 1: Revert code and rebuild
 git checkout HEAD -- worker/z-image_worker/handler.py
-docker-compose up -d --build z-image-worker
+docker compose up -d --build z-image-worker
 
 # Option 2: Use previous image (if available)
 docker images | grep z-image-worker  # Find old image ID
 docker tag <old-image-id> gpuorchestrator-z-image-worker:latest
-docker-compose restart z-image-worker
+docker compose restart z-image-worker
 
 # Option 3: Nuclear option - start fresh
-docker-compose down
+docker compose down
 git checkout main  # or your stable branch
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
 ```
 
 ---
@@ -1105,7 +1266,7 @@ curl http://localhost:8080/workers
 docker exec -it etcd etcdctl get "" --prefix
 
 # Check worker logs
-docker-compose logs z-image-worker
+docker compose logs z-image-worker
 ```
 
 ### Frontend Can't Connect
@@ -1115,7 +1276,7 @@ docker-compose logs z-image-worker
 curl http://localhost:8080/health
 
 # Check frontend logs
-docker-compose logs z-image-ui
+docker compose logs z-image-ui
 
 # Verify ORCHESTRATOR_URL is correct
 ```
@@ -1127,7 +1288,7 @@ docker-compose logs z-image-ui
 docker exec -it redis redis-cli XLEN jobs:z-image
 
 # Check worker is processing
-docker-compose logs -f z-image-worker
+docker compose logs -f z-image-worker
 ```
 
 ### Port Conflicts
@@ -1159,6 +1320,102 @@ ZImagePipeline.from_pretrained('Tongyi-MAI/Z-Image-Turbo')
 
 ---
 
+## Dynamic Worker Management
+
+**NEW**: GPU Orchestrator now supports dynamic worker switching for GPUs with limited VRAM!
+
+### The Problem
+
+If you have a 24GB GPU and want to run both Z-Image (16GB) and SDXL (12GB), they can't fit simultaneously. The solution: **exclusive GPU access** with automatic worker switching.
+
+### How It Works
+
+```
+User submits SDXL job
+    ↓
+Orchestrator detects Z-Image is running
+    ↓
+Worker Manager:
+  1. Stops z-image-worker (10s)
+  2. Starts sdxl-worker (45s)
+    ↓
+Job is processed on SDXL
+    ↓
+Only one model in GPU memory at a time!
+```
+
+### Adding Your Worker to Dynamic Management
+
+**Step 1: Add to `config/workers.yaml`**
+
+```yaml
+workers:
+  z-image-worker:
+    app_id: "z-image"
+    queue: "jobs:z-image"
+    vram_required_gb: 16
+    startup_time_seconds: 30
+    shutdown_time_seconds: 10
+
+  your-worker:
+    app_id: "your-app-id"
+    queue: "jobs:your-queue"
+    vram_required_gb: 10
+    startup_time_seconds: 60    # Time to load your model
+    shutdown_time_seconds: 10
+```
+
+**Step 2: Add to docker compose.yml**
+
+Your worker should be configured but NOT started automatically:
+
+```yaml
+  your-worker:
+    build:
+      context: .
+      dockerfile: worker/your_worker/Dockerfile
+    container_name: your-worker
+    restart: "no"  # Don't auto-restart - managed dynamically
+    # ... rest of config
+```
+
+**Step 3: Test Dynamic Switching**
+
+```bash
+# Check current worker
+./scripts/worker_manager.py status
+
+# Switch to your worker
+./scripts/worker_manager.py app your-app-id
+
+# Submit a job (automatically switches if needed)
+./scripts/submit_job.sh your-app-id '{"param": "value"}'
+```
+
+### Timing Considerations
+
+Worker switch latency = Previous shutdown + New startup + Model loading
+
+Example:
+- Z-Image to SDXL: 10s + 45s = 55 seconds
+- SDXL to Z-Image: 10s + 30s = 40 seconds
+
+**Optimization**: Keep frequently-used workers alive longer by increasing `idle_timeout` in `config/workers.yaml`.
+
+### When NOT to Use Dynamic Management
+
+- You have multiple GPUs (pin workers to specific GPUs instead)
+- Your models fit simultaneously in VRAM
+- You need concurrent inference from multiple models
+- Latency is critical (worker switching adds 30-90s)
+
+For more details, see:
+- **[DYNAMIC_WORKER_MANAGEMENT.md](DYNAMIC_WORKER_MANAGEMENT.md)** - Complete documentation
+- **[QUICKSTART_DYNAMIC_WORKERS.md](QUICKSTART_DYNAMIC_WORKERS.md)** - Quick start guide
+- **[scripts/README.md](scripts/README.md)** - Script usage
+
+---
+
 ## Summary
 
 **Each application = Worker + Frontend**
@@ -1167,8 +1424,9 @@ ZImagePipeline.from_pretrained('Tongyi-MAI/Z-Image-Turbo')
 2. Implement `handler.py` with your ML logic
 3. Create frontend with `./create_new_app.sh my-app-ui frontend`
 4. Customize UI for your app's needs
-5. Add both to `docker-compose.yml` with unique ports
-6. Deploy together!
+5. Add both to `docker compose.yml` with unique ports
+6. **[Optional]** Add to `config/workers.yaml` for dynamic GPU management
+7. Deploy together!
 
 **Ports to remember:**
 - Orchestrator: 8080
@@ -1180,6 +1438,7 @@ ZImagePipeline.from_pretrained('Tongyi-MAI/Z-Image-Turbo')
 **Each app is completely isolated!**
 
 For more details:
-- **FRONTEND_ARCHITECTURE.md** - Frontend design patterns
-- **WORKER_ISOLATION_STRATEGY.md** - Why isolated workers
-- **README.md** - System overview
+- **[ADDING_NEW_APPS.md](ADDING_NEW_APPS.md)** - This guide
+- **[DYNAMIC_WORKER_MANAGEMENT.md](DYNAMIC_WORKER_MANAGEMENT.md)** - Dynamic GPU management
+- **[QUICKSTART_DYNAMIC_WORKERS.md](QUICKSTART_DYNAMIC_WORKERS.md)** - Quick start
+- **[README.md](README.md)** - System overview

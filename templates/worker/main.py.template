@@ -1,6 +1,6 @@
 """
-Zz Iimage Worker
-Isolated worker for z-image jobs
+{{APP_NAME}} Worker
+Isolated worker for {{APP_NAME}} jobs
 """
 
 import os
@@ -10,11 +10,7 @@ import logging
 import redis
 import psycopg2
 from etcd3 import client as etcd_client
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
-import json
 
-# Setup paths
 # Setup paths
 sys.path.append('/app')
 from shared import worker_pb2
@@ -36,39 +32,15 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "gpu_orchestrator")
 ETCD_HOST = os.getenv("ETCD_HOST", "localhost")
 ETCD_PORT = int(os.getenv("ETCD_PORT", "2379"))
 
-STREAM_KEY = "jobs:z-image"
-GROUP_NAME = "z-image-workers"
-WORKER_ID = os.getenv("WORKER_ID", "z-image-worker-1")
+STREAM_KEY = "{{QUEUE_NAME}}"
+GROUP_NAME = "{{APP_ID}}-workers"
+WORKER_ID = os.getenv("WORKER_ID", "{{APP_ID}}-worker-1")
 
 # Import handler
-from handler import ZImageHandler
+from handler import {{CLASS_NAME}}Handler
 
 # Global handler instance
-handler = ZImageHandler()
-
-# HTTP Request Handler for cleanup endpoint
-class CleanupHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        if self.path == '/cleanup':
-            try:
-                handler.offload_model()
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "message": "GPU memory cleaned"}).encode())
-            except Exception as e:
-                logger.error(f"Cleanup error: {e}")
-                self.send_response(500)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):
-        # Suppress default HTTP logging
-        pass
+handler = {{CLASS_NAME}}Handler()
 
 
 def get_postgres_connection():
@@ -122,7 +94,7 @@ def register_worker_etcd():
         lease = etcd.lease(10)
 
         # Put worker info with lease
-        worker_info = f"app=z-image,queue=jobs:z-image,status=ONLINE"
+        worker_info = f"app={{APP_ID}},queue={{QUEUE_NAME}},status=ONLINE"
         etcd.put(key, worker_info, lease=lease)
 
         logger.info(f"[SUCCESS] Worker {WORKER_ID} registered in etcd")
@@ -151,8 +123,8 @@ def process_job(payload):
         logger.info(f"[PROCESSING] Processing job {job.job_id} for app {job.app_id}")
 
         # Validate app_id
-        if job.app_id != "z-image":
-            error_msg = f"Worker for z-image received job for {job.app_id}"
+        if job.app_id != "{{APP_ID}}":
+            error_msg = f"Worker for {{APP_ID}} received job for {job.app_id}"
             logger.error(error_msg)
             update_job_status(job.job_id, "FAILED", error=error_msg)
             return
@@ -183,24 +155,12 @@ def process_job(payload):
             pass
 
 
-def start_http_server():
-    """Start HTTP server for cleanup endpoint in background thread."""
-    port = int(os.getenv("CLEANUP_PORT", "8000"))
-    server = HTTPServer(('0.0.0.0', port), CleanupHandler)
-    logger.info(f"[HTTP] Cleanup endpoint running on port {port}")
-    server.serve_forever()
-
-
 def main():
     """Main worker loop."""
-    logger.info(f"[STARTUP] Starting Z-Image Worker")
+    logger.info(f"[STARTUP] Starting {{APP_NAME}} Worker")
     logger.info(f"Worker ID: {WORKER_ID}")
     logger.info(f"Queue: {STREAM_KEY}")
-    logger.info(f"App ID: z-image")
-
-    # Start HTTP server in background thread
-    http_thread = threading.Thread(target=start_http_server, daemon=True)
-    http_thread.start()
+    logger.info(f"App ID: {{APP_ID}}")
 
     # Connect to Redis
     try:

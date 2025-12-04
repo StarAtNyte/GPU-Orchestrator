@@ -59,43 +59,17 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - ETCD_ENDPOINT=etcd:2379
       - APP_REGISTRY_PATH=/app/config/apps.yaml
+      - COMPOSE_PROJECT_NAME=gpuorchestrator
     volumes:
       - ./config:/app/config:ro
+      - ./scripts:/app/scripts:ro
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
+      - ./worker:/app/worker:ro
+      - ./frontends:/app/frontends:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - '8080:8080'
     restart: unless-stopped
-
-  gpu-worker:
-    build:
-      context: ./worker
-      dockerfile: Dockerfile
-    container_name: gpu-worker
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      etcd:
-        condition: service_started
-    environment:
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - ETCD_HOST=etcd
-      - ETCD_PORT=2379
-      - MODEL_DIR=/models
-      - WORKER_ID=gpu-worker-1
-    volumes:
-      - ./worker/models:/models
-    ports:
-      - '8000:8000'
-    deploy:
-      resources: {}
-    # Enable GPU access (compose v2/v2.4+ / docker compose with GPU support)
-    gpus: all
 
   z-image-worker:
     build:
@@ -124,8 +98,9 @@ services:
       - HF_TOKEN=${HF_TOKEN}  # For downloading Z-Image model
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     volumes:
-      - ./worker/shared:/app/shared:ro
       - z-image-models:/models
+    shm_size: '16gb'
+    mem_limit: 28g
     deploy:
       resources:
         reservations:
@@ -146,9 +121,61 @@ services:
       - ORCHESTRATOR_URL=http://orchestrator:8080
     ports:
       - "7861:7861"
-        
+
+  # SDXL Frontend (web UI)
+  sdxl-ui:
+    build:
+      context: frontends/sdxl-ui
+    container_name: sdxl-ui
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8080
+    ports:
+      - "7862:7861"
+
+  # SDXL Worker
+  sdxl-worker:
+    build:
+      context: .
+      dockerfile: worker/sdxl_worker/Dockerfile
+    container_name: sdxl-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      etcd:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - ETCD_HOST=etcd
+      - ETCD_PORT=2379
+      - WORKER_ID=sdxl-worker-1
+      - MODEL_DIR=/models
+      - HF_TOKEN=${HF_TOKEN}
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    volumes:
+      - sdxl-models:/models
+    shm_size: '16gb'
+    mem_limit: 28g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
 volumes:
   redis-data:
   postgres-data:
   z-image-models:
+  sdxl-models:
   

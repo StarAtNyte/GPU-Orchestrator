@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -133,6 +134,16 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		http.Error(w, "Unknown App ID", http.StatusBadRequest)
 		return
+	}
+
+	// Switch to correct worker before job submission (for local GPU jobs)
+	if appConfig.Type == "local" {
+		log.Printf("[INFO] Ensuring correct worker is active for app: %s", req.AppID)
+		if err := switchWorker(req.AppID); err != nil {
+			log.Printf("[ERROR] Failed to switch worker: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to prepare worker: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	jobID := uuid.New().String()
@@ -329,6 +340,20 @@ func runMigrations(db *sql.DB) {
 	} else {
 		log.Println("[INFO] Database migrations applied successfully")
 	}
+}
+
+// switchWorker calls the worker manager to switch to the correct worker
+func switchWorker(appID string) error {
+	// Call python worker manager script
+	cmd := exec.Command("python3", "/app/scripts/worker_manager.py", "app", appID)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return fmt.Errorf("worker manager error: %s - %v", string(output), err)
+	}
+
+	log.Printf("[SUCCESS] Worker ready for app: %s", appID)
+	return nil
 }
 
 // proxyToModal forwards a job request to a Modal endpoint

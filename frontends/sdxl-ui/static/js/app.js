@@ -1,104 +1,255 @@
-// SDXL Image Generator - Frontend JavaScript
-
-class SDXLGenerator {
+class SDXLImageUI {
     constructor() {
         this.currentJobId = null;
         this.pollInterval = null;
-        this.history = this.loadHistory();
+        this.zoomLevel = 1;
+        this.isDragging = false;
+        this.startX = 0;
+        this.startY = 0;
+        this.translateX = 0;
+        this.translateY = 0;
 
-        this.initElements();
-        this.attachEventListeners();
-        this.updateSliderValues();
-        this.checkOrchestratorStatus();
-        this.renderHistory();
+        // Elements
+        this.form = document.getElementById('generateForm');
+        this.leftPanel = document.getElementById('leftPanel');
 
-        // Poll status every 5 seconds
-        setInterval(() => this.checkOrchestratorStatus(), 5000);
-    }
+        // Right panel states
+        this.placeholderState = document.getElementById('placeholderState');
+        this.loadingState = document.getElementById('loadingState');
+        this.imageResultState = document.getElementById('imageResultState');
 
-    initElements() {
-        this.form = document.getElementById('generate-form');
-        this.generateBtn = document.getElementById('generate-btn');
+        this.loadingText = document.getElementById('loadingText');
+        this.jobIdDisplay = document.getElementById('jobIdDisplay');
+        this.resultImage = document.getElementById('resultImage');
+        this.generationInfo = document.getElementById('generationInfo');
+        this.downloadBtn = document.getElementById('downloadBtn');
+        this.newBtn = document.getElementById('newBtn');
+        this.statusBadge = document.getElementById('statusBadge');
+        this.statusText = document.getElementById('statusText');
+        this.logoHome = document.getElementById('logoHome');
 
+        // Sliders
         this.stepsSlider = document.getElementById('steps');
-        this.stepsValue = document.getElementById('steps-value');
+        this.stepsValue = document.getElementById('stepsValue');
         this.guidanceSlider = document.getElementById('guidance');
-        this.guidanceValue = document.getElementById('guidance-value');
+        this.guidanceValue = document.getElementById('guidanceValue');
+        this.randomSeedCheckbox = document.getElementById('randomSeed');
+        this.seedGroup = document.getElementById('seedGroup');
 
-        this.emptyState = document.getElementById('empty-state');
-        this.jobStatus = document.getElementById('job-status');
-        this.imageResult = document.getElementById('image-result');
-        this.errorState = document.getElementById('error-state');
+        // Fullscreen
+        this.fullscreenModal = document.getElementById('fullscreenModal');
+        this.fullscreenImg = document.getElementById('fullscreenImg');
+        this.fullscreenClose = document.getElementById('fullscreenClose');
+        this.zoomInBtn = document.getElementById('zoomInBtn');
+        this.zoomOutBtn = document.getElementById('zoomOutBtn');
+        this.resetZoomBtn = document.getElementById('resetZoomBtn');
 
-        this.statusText = document.getElementById('status-text');
-        this.progressFill = document.getElementById('progress-fill');
-        this.currentJobIdEl = document.getElementById('current-job-id');
-        this.resultImage = document.getElementById('result-image');
-        this.jobMetadata = document.getElementById('job-metadata');
-        this.errorMessage = document.getElementById('error-message');
+        // Event listeners
+        this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+        this.newBtn.addEventListener('click', () => this.reset());
+        this.logoHome.addEventListener('click', () => this.reset());
+        this.downloadBtn.addEventListener('click', () => this.downloadImage());
 
-        this.orchestratorStatus = document.getElementById('orchestrator-status');
-        this.workersCount = document.getElementById('workers-count').querySelector('.count');
+        // Slider updates
+        this.stepsSlider.addEventListener('input', (e) => {
+            this.stepsValue.textContent = e.target.value;
+            document.getElementById('currentSteps').textContent = e.target.value;
+        });
+        this.guidanceSlider.addEventListener('input', (e) => {
+            this.guidanceValue.textContent = parseFloat(e.target.value).toFixed(1);
+            document.getElementById('currentGuidance').textContent = parseFloat(e.target.value).toFixed(1);
+        });
 
-        this.historyGrid = document.getElementById('history-grid');
+        // Random seed toggle
+        this.randomSeedCheckbox.addEventListener('change', (e) => {
+            this.seedGroup.style.display = e.target.checked ? 'none' : 'block';
+        });
+
+        // Advanced settings toggle
+        this.advancedToggle = document.getElementById('advancedToggle');
+        this.advancedSettings = document.getElementById('advancedSettings');
+        this.advancedIcon = document.getElementById('advancedIcon');
+
+        this.advancedToggle.addEventListener('click', () => {
+            const isHidden = this.advancedSettings.style.display === 'none';
+            this.advancedSettings.style.display = isHidden ? 'block' : 'none';
+            this.advancedIcon.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+        });
+
+        // Example prompts
+        const exampleBtns = document.querySelectorAll('.example-btn');
+        exampleBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const prompt = btn.getAttribute('data-prompt');
+                document.getElementById('prompt').value = prompt;
+
+                // Visual feedback - reset all buttons
+                exampleBtns.forEach(b => {
+                    b.style.background = 'white';
+                    b.style.color = 'var(--gray-700)';
+                    b.style.borderColor = 'var(--gray-200)';
+                    // Reset number badge color
+                    const numberBadge = b.querySelector('.example-number');
+                    if (numberBadge) {
+                        numberBadge.style.background = 'var(--primary)';
+                        numberBadge.style.color = 'white';
+                    }
+                });
+
+                // Highlight selected button - use light blue background with dark text
+                btn.style.background = '#e0f2fe';
+                btn.style.color = 'var(--gray-700)';
+                btn.style.borderColor = 'var(--primary)';
+
+                // Keep number badge as is for selected
+                const selectedNumberBadge = btn.querySelector('.example-number');
+                if (selectedNumberBadge) {
+                    selectedNumberBadge.style.background = 'var(--primary)';
+                    selectedNumberBadge.style.color = 'white';
+                }
+
+                // Scroll to prompt
+                document.getElementById('prompt').focus();
+            });
+        });
+
+        // Fullscreen
+        this.resultImage.addEventListener('click', () => this.openFullscreen());
+        this.fullscreenClose.addEventListener('click', () => this.closeFullscreen());
+        this.fullscreenModal.addEventListener('click', (e) => {
+            if (e.target === this.fullscreenModal) this.closeFullscreen();
+        });
+        this.zoomInBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.zoomLevel = Math.min(this.zoomLevel + 0.5, 5);
+            this.updateTransform();
+        });
+        this.zoomOutBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.zoomLevel = Math.max(this.zoomLevel - 0.5, 0.5);
+            this.updateTransform();
+        });
+        this.resetZoomBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.zoomLevel = 1;
+            this.translateX = 0;
+            this.translateY = 0;
+            this.updateTransform();
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (!this.fullscreenModal.classList.contains('active')) return;
+
+            if (e.key === 'Escape') this.closeFullscreen();
+            else if (e.key === '+' || e.key === '=') {
+                this.zoomLevel = Math.min(this.zoomLevel + 0.5, 5);
+                this.updateTransform();
+            }
+            else if (e.key === '-' || e.key === '_') {
+                this.zoomLevel = Math.max(this.zoomLevel - 0.5, 0.5);
+                this.updateTransform();
+            }
+            else if (e.key === '0') {
+                this.zoomLevel = 1;
+                this.translateX = 0;
+                this.translateY = 0;
+                this.updateTransform();
+            }
+        });
+
+        // Mouse drag to pan
+        this.fullscreenImg.addEventListener('mousedown', (e) => {
+            if (this.zoomLevel > 1) {
+                this.isDragging = true;
+                this.startX = e.clientX - this.translateX;
+                this.startY = e.clientY - this.translateY;
+                this.fullscreenImg.style.cursor = 'grabbing';
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (this.isDragging) {
+                this.translateX = e.clientX - this.startX;
+                this.translateY = e.clientY - this.startY;
+                this.updateTransform();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            this.isDragging = false;
+            if (this.zoomLevel > 1) {
+                this.fullscreenImg.style.cursor = 'move';
+            } else {
+                this.fullscreenImg.style.cursor = 'zoom-out';
+            }
+        });
+
+        // Mouse wheel zoom
+        this.fullscreenImg.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                this.zoomLevel = Math.min(this.zoomLevel + 0.2, 5);
+            } else {
+                this.zoomLevel = Math.max(this.zoomLevel - 0.2, 0.5);
+            }
+            this.updateTransform();
+        });
+
+        // Check health
+        this.checkHealth();
+        setInterval(() => this.checkHealth(), 5000);
     }
 
-    attachEventListeners() {
-        this.form.addEventListener('submit', (e) => this.handleGenerate(e));
-        this.stepsSlider.addEventListener('input', () => this.updateSliderValues());
-        this.guidanceSlider.addEventListener('input', () => this.updateSliderValues());
-
-        document.getElementById('download-btn')?.addEventListener('click', () => this.downloadImage());
-        document.getElementById('new-generation-btn')?.addEventListener('click', () => this.resetForm());
-        document.getElementById('retry-btn')?.addEventListener('click', () => this.resetForm());
-    }
-
-    updateSliderValues() {
-        this.stepsValue.textContent = this.stepsSlider.value;
-        this.guidanceValue.textContent = this.guidanceSlider.value;
-    }
-
-    async checkOrchestratorStatus() {
+    async checkHealth() {
         try {
             const response = await fetch('/health');
             const data = await response.json();
-
             if (data.orchestrator === 'connected') {
-                this.orchestratorStatus.classList.add('connected');
-                this.orchestratorStatus.classList.remove('disconnected');
+                this.statusBadge.classList.remove('disconnected');
+                this.statusText.textContent = 'Ready • Orchestrator Connected';
             } else {
-                this.orchestratorStatus.classList.add('disconnected');
-                this.orchestratorStatus.classList.remove('connected');
+                this.statusBadge.classList.add('disconnected');
+                this.statusText.textContent = 'Disconnected • Check Orchestrator';
             }
-
-            const workersResponse = await fetch('/api/workers');
-            const workersData = await workersResponse.json();
-            this.workersCount.textContent = workersData.count || 0;
         } catch (error) {
-            this.orchestratorStatus.classList.add('disconnected');
-            this.orchestratorStatus.classList.remove('connected');
-            this.workersCount.textContent = '0';
+            this.statusBadge.classList.add('disconnected');
+            this.statusText.textContent = 'Disconnected • Check Orchestrator';
         }
     }
 
-    async handleGenerate(e) {
+    async handleSubmit(e) {
         e.preventDefault();
 
         const formData = new FormData(this.form);
+
+        // Parse resolution
+        const resolution = formData.get('resolution').split('x');
+        const width = parseInt(resolution[0]);
+        const height = parseInt(resolution[1]);
+
+        // Handle random seed
+        let seed = null;
+        if (!this.randomSeedCheckbox.checked) {
+            seed = parseInt(formData.get('seed'));
+        }
+
         const data = {
             prompt: formData.get('prompt'),
             negative_prompt: formData.get('negative_prompt') || '',
-            width: parseInt(formData.get('width')),
-            height: parseInt(formData.get('height')),
+            width: width,
+            height: height,
             num_inference_steps: parseInt(formData.get('num_inference_steps')),
             guidance_scale: parseFloat(formData.get('guidance_scale')),
-            seed: formData.get('seed') ? parseInt(formData.get('seed')) : null
+            seed: seed
         };
 
-        this.setLoading(true);
-        this.showJobStatus();
-        this.statusText.textContent = 'Submitting job to orchestrator...';
-        this.progressFill.style.width = '10%';
+        // Show loading state
+        this.placeholderState.style.display = 'none';
+        this.imageResultState.style.display = 'none';
+        this.loadingState.style.display = 'flex';
+        this.loadingText.textContent = 'SUBMITTING JOB...';
+        this.jobIdDisplay.textContent = '';
 
         try {
             const response = await fetch('/api/generate', {
@@ -107,238 +258,128 @@ class SDXLGenerator {
                 body: JSON.stringify(data)
             });
 
-            if (!response.ok) {
-                throw new Error('Failed to submit job');
-            }
-
             const result = await response.json();
 
             if (result.success) {
                 this.currentJobId = result.job_id;
-                this.currentJobIdEl.textContent = result.job_id;
-                this.statusText.textContent = 'Job queued, waiting for worker...';
-                this.progressFill.style.width = '30%';
-                this.startPolling(data);
+                this.currentParams = data;
+                this.jobIdDisplay.textContent = `Job ID: ${result.job_id}`;
+                this.loadingText.textContent = 'QUEUED...';
+                this.startPolling();
             } else {
-                throw new Error('Job submission failed');
+                alert('Failed to submit job: ' + (result.error || 'Unknown error'));
+                this.reset();
             }
         } catch (error) {
-            this.showError(error.message || 'Failed to connect to orchestrator');
-            this.setLoading(false);
+            alert('Error: ' + error.message);
+            this.reset();
         }
     }
 
-    startPolling(originalParams) {
-        let pollCount = 0;
-        const maxPolls = 120; // 2 minutes max
-
+    startPolling() {
         this.pollInterval = setInterval(async () => {
-            pollCount++;
-
-            if (pollCount > maxPolls) {
-                clearInterval(this.pollInterval);
-                this.showError('Job timeout - took too long to complete');
-                this.setLoading(false);
-                return;
-            }
-
             try {
                 const response = await fetch(`/api/status/${this.currentJobId}`);
-
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        throw new Error('Job not found');
-                    }
-                    throw new Error('Failed to fetch status');
-                }
-
                 const data = await response.json();
 
-                if (data.status === 'QUEUED') {
-                    this.statusText.textContent = 'Waiting in queue...';
-                    this.progressFill.style.width = '40%';
-                } else if (data.status === 'PROCESSING') {
-                    this.statusText.textContent = 'Generating image...';
-                    this.progressFill.style.width = '70%';
-                } else if (data.status === 'COMPLETED') {
-                    clearInterval(this.pollInterval);
-                    this.progressFill.style.width = '100%';
-                    this.statusText.textContent = 'Complete!';
+                if (data.success) {
+                    const status = data.status;
 
-                    setTimeout(() => {
-                        this.showResult(data, originalParams);
-                        this.setLoading(false);
-                    }, 500);
-                } else if (data.status === 'FAILED') {
-                    clearInterval(this.pollInterval);
-                    this.showError(data.error || 'Job failed');
-                    this.setLoading(false);
+                    if (status === 'QUEUED') {
+                        this.loadingText.textContent = 'WAITING IN QUEUE...';
+                    } else if (status === 'PROCESSING') {
+                        this.loadingText.textContent = 'GENERATING IMAGE...';
+                    } else if (status === 'COMPLETED') {
+                        clearInterval(this.pollInterval);
+                        this.showResult(data);
+                    } else if (status === 'FAILED') {
+                        clearInterval(this.pollInterval);
+                        alert('Job failed: ' + (data.error || 'Unknown error'));
+                        this.reset();
+                    }
                 }
             } catch (error) {
-                clearInterval(this.pollInterval);
-                this.showError(error.message);
-                this.setLoading(false);
+                console.error('Polling error:', error);
             }
         }, 1000);
     }
 
-    showJobStatus() {
-        this.emptyState.style.display = 'none';
-        this.jobStatus.style.display = 'block';
-        this.imageResult.style.display = 'none';
-        this.errorState.style.display = 'none';
-    }
+    showResult(data) {
+        this.loadingState.style.display = 'none';
+        this.imageResultState.style.display = 'flex';
 
-    showResult(data, originalParams) {
-        this.emptyState.style.display = 'none';
-        this.jobStatus.style.display = 'none';
-        this.imageResult.style.display = 'block';
-        this.errorState.style.display = 'none';
+        // Parse result - handle both object and string formats
+        let imageData = null;
+        if (data.result) {
+            if (typeof data.result === 'object') {
+                // Direct object from JSON
+                imageData = data.result;
+            } else if (typeof data.result === 'string') {
+                try {
+                    // Parse JSON string
+                    imageData = JSON.parse(data.result);
+                } catch (e) {
+                    console.error('Failed to parse result:', e);
+                }
+            }
+        }
 
-        // Display the image
-        if (data.result && data.result.image_base64) {
-            this.resultImage.src = `data:image/png;base64,${data.result.image_base64}`;
+        if (imageData && imageData.image_base64) {
+            // Convert base64 to data URL
+            const imageUrl = `data:image/png;base64,${imageData.image_base64}`;
+            this.resultImage.src = imageUrl;
+
+            // Show generation info
+            const resolution = `${this.currentParams.width}x${this.currentParams.height}`;
+            const steps = imageData.num_inference_steps || this.currentParams.num_inference_steps;
+            const guidance = imageData.guidance_scale || this.currentParams.guidance_scale;
+            const seed = imageData.seed || 'Random';
+
+            this.generationInfo.textContent = `${resolution} • ${steps} steps • Guidance: ${guidance} • Seed: ${seed}`;
         } else {
-            this.showError('No image data received');
-            return;
+            alert('No image in result');
+            this.reset();
         }
-
-        // Display metadata
-        const metadata = `
-            <p><strong>Job ID:</strong> ${data.job_id}</p>
-            <p><strong>Prompt:</strong> ${originalParams.prompt}</p>
-            <p><strong>Size:</strong> ${originalParams.width}x${originalParams.height}</p>
-            <p><strong>Steps:</strong> ${originalParams.num_inference_steps}</p>
-            <p><strong>Guidance:</strong> ${originalParams.guidance_scale}</p>
-            ${data.result.seed ? `<p><strong>Seed:</strong> ${data.result.seed}</p>` : ''}
-            ${data.result.time_taken ? `<p><strong>Time:</strong> ${data.result.time_taken.toFixed(2)}s</p>` : ''}
-        `;
-        this.jobMetadata.innerHTML = metadata;
-
-        // Add to history
-        this.addToHistory({
-            jobId: data.job_id,
-            image: this.resultImage.src,
-            prompt: originalParams.prompt,
-            timestamp: new Date().toISOString(),
-            params: originalParams
-        });
-    }
-
-    showError(message) {
-        this.emptyState.style.display = 'none';
-        this.jobStatus.style.display = 'none';
-        this.imageResult.style.display = 'none';
-        this.errorState.style.display = 'block';
-
-        this.errorMessage.textContent = message;
-    }
-
-    setLoading(isLoading) {
-        if (isLoading) {
-            this.generateBtn.classList.add('loading');
-            this.generateBtn.disabled = true;
-        } else {
-            this.generateBtn.classList.remove('loading');
-            this.generateBtn.disabled = false;
-        }
-    }
-
-    resetForm() {
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-        }
-
-        this.emptyState.style.display = 'flex';
-        this.jobStatus.style.display = 'none';
-        this.imageResult.style.display = 'none';
-        this.errorState.style.display = 'none';
-
-        this.currentJobId = null;
-        this.progressFill.style.width = '0%';
     }
 
     downloadImage() {
         const link = document.createElement('a');
         link.href = this.resultImage.src;
-        link.download = `sdxl-${this.currentJobId || Date.now()}.png`;
+        link.download = `sdxl_${this.currentJobId}_${Date.now()}.png`;
         link.click();
     }
 
-    addToHistory(item) {
-        this.history.unshift(item);
-        if (this.history.length > 20) {
-            this.history = this.history.slice(0, 20);
-        }
-        this.saveHistory();
-        this.renderHistory();
+    openFullscreen() {
+        this.fullscreenImg.src = this.resultImage.src;
+        this.fullscreenModal.classList.add('active');
+        this.zoomLevel = 1;
+        this.translateX = 0;
+        this.translateY = 0;
+        this.updateTransform();
     }
 
-    renderHistory() {
-        if (this.history.length === 0) {
-            this.historyGrid.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center;">No generation history yet</p>';
-            return;
-        }
-
-        this.historyGrid.innerHTML = this.history.map(item => `
-            <div class="history-item" onclick="generator.viewHistoryItem('${item.jobId}')">
-                <img src="${item.image}" alt="Generated image">
-                <div class="history-item-info">
-                    <p class="history-item-prompt">${item.prompt}</p>
-                </div>
-            </div>
-        `).join('');
+    closeFullscreen() {
+        this.fullscreenModal.classList.remove('active');
+        this.zoomLevel = 1;
+        this.translateX = 0;
+        this.translateY = 0;
     }
 
-    viewHistoryItem(jobId) {
-        const item = this.history.find(h => h.jobId === jobId);
-        if (!item) return;
-
-        this.resultImage.src = item.image;
-        this.currentJobId = item.jobId;
-
-        const metadata = `
-            <p><strong>Job ID:</strong> ${item.jobId}</p>
-            <p><strong>Prompt:</strong> ${item.prompt}</p>
-            <p><strong>Size:</strong> ${item.params.width}x${item.params.height}</p>
-            <p><strong>Steps:</strong> ${item.params.num_inference_steps}</p>
-            <p><strong>Guidance:</strong> ${item.params.guidance_scale}</p>
-            <p><strong>Generated:</strong> ${new Date(item.timestamp).toLocaleString()}</p>
-        `;
-        this.jobMetadata.innerHTML = metadata;
-
-        this.emptyState.style.display = 'none';
-        this.jobStatus.style.display = 'none';
-        this.imageResult.style.display = 'block';
-        this.errorState.style.display = 'none';
-
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    updateTransform() {
+        this.fullscreenImg.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.zoomLevel})`;
+        this.fullscreenImg.style.cursor = this.zoomLevel > 1 ? 'move' : 'zoom-out';
     }
 
-    loadHistory() {
-        try {
-            const saved = localStorage.getItem('sdxl-history');
-            return saved ? JSON.parse(saved) : [];
-        } catch {
-            return [];
+    reset() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
         }
-    }
-
-    saveHistory() {
-        try {
-            localStorage.setItem('sdxl-history', JSON.stringify(this.history));
-        } catch (error) {
-            console.error('Failed to save history:', error);
-        }
+        this.loadingState.style.display = 'none';
+        this.imageResultState.style.display = 'none';
+        this.placeholderState.style.display = 'flex';
+        this.currentJobId = null;
     }
 }
 
-// Initialize when DOM is ready
-let generator;
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        generator = new SDXLGenerator();
-    });
-} else {
-    generator = new SDXLGenerator();
-}
+// Initialize
+new SDXLImageUI();

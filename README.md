@@ -1,21 +1,23 @@
 # GPU Orchestrator
 
-A GPU job orchestration system for AI/ML workloads with isolated workers, hybrid cloud support, and modern web UIs.
+A GPU job orchestration system for AI/ML workloads with isolated workers, **dynamic worker management**, hybrid cloud support, and modern web UIs.
 
 ## What is This?
 
 GPU Orchestrator is a distributed system that:
 - **Routes AI/ML jobs** to local GPU workers or cloud providers (Modal, Replicate)
 - **Isolates dependencies** - each model runs in its own container (no version conflicts!)
+- **Dynamically manages GPU access** - automatically switches workers to avoid OOM errors
 - **Scales horizontally** - run multiple workers per model type
 - **Provides web UIs** - modern frontends for each application
 - **Tracks jobs** - PostgreSQL for persistence, Redis for queuing
 
 Perfect for:
-- Running multiple AI models on shared GPU infrastructure
+- Running multiple AI models on shared GPU infrastructure with limited VRAM
 - Building AI-powered web applications
 - Mixing local GPUs with cloud burst capacity
 - Research labs with diverse model requirements
+- Single GPU setups with multiple large models (Z-Image, SDXL, LLaMA, etc.)
 
 ## Architecture
 
@@ -108,20 +110,20 @@ cp .env.example .env
 
 ```bash
 # Start core services
-docker-compose up -d postgres redis etcd orchestrator
+docker compose up -d postgres redis etcd orchestrator
 
 # Check status
-docker-compose ps
+docker compose ps
 ```
 
 ### 3. Start Workers
 
 ```bash
 # Start SDXL image generation worker
-docker-compose up -d sdxl-worker
+docker compose up -d sdxl-worker
 
 # Start Whisper speech-to-text worker
-docker-compose up -d whisper-worker
+docker compose up -d whisper-worker
 
 # Check worker registration
 curl http://localhost:8080/workers
@@ -131,7 +133,7 @@ curl http://localhost:8080/workers
 
 ```bash
 # Start SDXL web UI
-docker-compose up -d sdxl-ui
+docker compose up -d sdxl-ui
 
 # Access at http://localhost:7861
 ```
@@ -207,7 +209,7 @@ gpu-orchestrator/
 ├── config/
 │   └── apps.yaml                # App registry (loaded by orchestrator)
 │
-├── docker-compose.yml           # Service orchestration
+├── docker compose.yml           # Service orchestration
 ├── create_new_app.sh            # Generator script
 └── README.md                    # This file
 ```
@@ -237,11 +239,11 @@ Each generates all necessary files with templates. See [ADDING_NEW_APPS.md](ADDI
 
 # 2. Edit handler.py to load Whisper model
 # 3. Add dependencies to requirements.txt
-# 4. Add to docker-compose.yml
+# 4. Add to docker compose.yml
 # 5. Build and start
 
-docker-compose build whisper-worker
-docker-compose up -d whisper-worker
+docker compose build whisper-worker
+docker compose up -d whisper-worker
 ```
 
 ## Monitoring
@@ -277,13 +279,13 @@ curl http://localhost:8080/status/<job-id>
 
 ```bash
 # Orchestrator logs
-docker-compose logs -f orchestrator
+docker compose logs -f orchestrator
 
 # Worker logs
-docker-compose logs -f sdxl-worker
+docker compose logs -f sdxl-worker
 
 # All services
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ### Database Queries
@@ -377,7 +379,7 @@ apps:
 
 ```bash
 # Scale SDXL workers to 3 instances
-docker-compose up -d --scale sdxl-worker=3
+docker compose up -d --scale sdxl-worker=3
 
 # Each worker joins the same consumer group
 # Jobs are load-balanced automatically
@@ -388,7 +390,7 @@ docker-compose up -d --scale sdxl-worker=3
 Pin workers to specific GPUs:
 
 ```yaml
-# docker-compose.yml
+# docker compose.yml
 sdxl-worker-gpu0:
   deploy:
     resources:
@@ -430,57 +432,57 @@ After modifying worker code, handler logic, or frontend files, you need to rebui
 
 ```bash
 # Stop the worker
-docker-compose stop z-image-worker
+docker compose stop z-image-worker
 
 # Rebuild with latest code
-docker-compose build z-image-worker
+docker compose build z-image-worker
 
 # Start with new image
-docker-compose up -d z-image-worker
+docker compose up -d z-image-worker
 
 # Or do all in one command:
-docker-compose up -d --build z-image-worker
+docker compose up -d --build z-image-worker
 ```
 
 ### Rebuilding the Orchestrator
 
 ```bash
 # After changing orchestrator Go code
-docker-compose stop orchestrator
-docker-compose build orchestrator
-docker-compose up -d orchestrator
+docker compose stop orchestrator
+docker compose build orchestrator
+docker compose up -d orchestrator
 ```
 
 ### Rebuilding a Frontend
 
 ```bash
 # After changing UI code
-docker-compose restart z-image-ui
+docker compose restart z-image-ui
 
 # Or rebuild if you changed Dockerfile/requirements
-docker-compose up -d --build z-image-ui
+docker compose up -d --build z-image-ui
 ```
 
 ### Rebuilding Everything
 
 ```bash
 # Nuclear option - rebuild all services
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
 
 # Or rebuild specific services
-docker-compose up -d --build orchestrator z-image-worker z-image-ui
+docker compose up -d --build orchestrator z-image-worker z-image-ui
 ```
 
 ### Common Gotchas
 
 **Container is running old code:**
-- Running `docker-compose up -d` after building won't restart containers
-- Use `docker-compose up -d --force-recreate` to force restart
-- Or explicitly restart: `docker-compose restart service-name`
+- Running `docker compose up -d` after building won't restart containers
+- Use `docker compose up -d --force-recreate` to force restart
+- Or explicitly restart: `docker compose restart service-name`
 
 **Build cache issues:**
-- Use `--no-cache` to force clean build: `docker-compose build --no-cache`
+- Use `--no-cache` to force clean build: `docker compose build --no-cache`
 - Useful when dependencies change or builds behave unexpectedly
 
 **Template changes:**
@@ -491,27 +493,64 @@ docker-compose up -d --build orchestrator z-image-worker z-image-ui
 
 ```bash
 # Change worker code → rebuild worker
-docker-compose up -d --build z-image-worker
+docker compose up -d --build z-image-worker
 
 # Change orchestrator code → rebuild orchestrator
-docker-compose up -d --build orchestrator
+docker compose up -d --build orchestrator
 
 # Change frontend code → restart frontend (fast)
-docker-compose restart z-image-ui
+docker compose restart z-image-ui
 
 # Change frontend Dockerfile → rebuild frontend
-docker-compose up -d --build z-image-ui
+docker compose up -d --build z-image-ui
 
 # Change config/apps.yaml → restart orchestrator
-docker-compose restart orchestrator
+docker compose restart orchestrator
 
 # Change .env → restart affected services
-docker-compose up -d
+docker compose up -d
 ```
+
+## Dynamic Worker Management (NEW!)
+
+For GPUs with limited VRAM, the orchestrator can automatically switch between workers:
+
+```bash
+# Check worker status
+./scripts/worker_manager.py status
+
+# Submit job (auto-switches workers)
+./scripts/submit_job.sh sdxl-image-gen '{"prompt": "A cat"}'
+
+# Test automatic switching
+./scripts/test_dynamic_switching.sh
+```
+
+**Features:**
+- Exclusive GPU access (one worker at a time)
+- Automatic worker switching on job submission
+- Configurable startup/shutdown times
+- Zero manual intervention required
+
+**Quick Start:**
+```bash
+# Start infrastructure only
+docker compose up -d redis postgres etcd orchestrator
+
+# Workers are managed dynamically (not started automatically)
+# Submit a job and the orchestrator starts the right worker
+./scripts/submit_job.sh z-image '{"prompt": "A futuristic city"}'
+```
+
+See **[QUICKSTART_DYNAMIC_WORKERS.md](QUICKSTART_DYNAMIC_WORKERS.md)** for complete guide.
 
 ## Documentation
 
+- **[README.md](README.md)** - This file (system overview)
 - **[ADDING_NEW_APPS.md](ADDING_NEW_APPS.md)** - Complete guide to adding workers and frontends
+- **[DYNAMIC_WORKER_MANAGEMENT.md](DYNAMIC_WORKER_MANAGEMENT.md)** - Dynamic GPU management (detailed)
+- **[QUICKSTART_DYNAMIC_WORKERS.md](QUICKSTART_DYNAMIC_WORKERS.md)** - Quick start guide for dynamic workers
+- **[scripts/README.md](scripts/README.md)** - Helper scripts documentation
 
 ## Roadmap
 
@@ -521,6 +560,9 @@ docker-compose up -d
 - [x] Web UI framework (FastAPI + modern CSS)
 - [x] Worker health monitoring (etcd)
 - [x] App registry (YAML config)
+- [x] **Dynamic worker management with exclusive GPU access**
+- [x] **Automatic worker switching**
+- [x] **Helper scripts for job submission and monitoring**
 - [ ] Prometheus metrics
 - [ ] Job prioritization
 - [ ] Cost tracking (cloud vs local)

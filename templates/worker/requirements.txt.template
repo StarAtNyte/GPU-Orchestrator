@@ -5,11 +5,14 @@ protobuf==3.20.3
 psycopg2-binary==2.9.9
 etcd3==0.12.0
 
-# SDXL specific dependencies
+# ML dependencies (customize for your model)
 torch>=2.0.0
-torchvision
 transformers
 accelerate
-diffusers
-Pillow
-safetensors
+
+# Add your model-specific dependencies here
+# Example:
+# diffusers
+# Pillow
+# opencv-python
+# numpy

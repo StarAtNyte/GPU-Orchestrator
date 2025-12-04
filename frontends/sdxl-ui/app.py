@@ -73,7 +73,7 @@ async def generate(request: GenerateRequest):
                     "seed": str(request.seed) if request.seed else "-1"
                 }
             },
-            timeout=10
+            timeout=240  # 4 minutes to allow for model loading on cold start
         )
 
         if response.status_code == 200:
