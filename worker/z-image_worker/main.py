@@ -15,7 +15,6 @@ import threading
 import json
 
 # Setup paths
-# Setup paths
 sys.path.append('/app')
 from shared import worker_pb2
 
@@ -141,7 +140,20 @@ def keep_alive_etcd(lease):
             logger.error(f"Failed to refresh etcd lease: {e}")
 
 
-def process_job(payload):
+def mark_worker_active(redis_client):
+    """Mark worker as currently processing a job."""
+    try:
+        from datetime import datetime
+        redis_client.setex(
+            f"worker:{WORKER_ID}:last_active",
+            120,  # Expires in 2 minutes
+            datetime.utcnow().isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Failed to mark worker active: {e}")
+
+
+def process_job(payload, redis_client):
     """Process a single job."""
     try:
         # Parse protobuf
@@ -149,6 +161,9 @@ def process_job(payload):
         job.ParseFromString(payload)
 
         logger.info(f"[PROCESSING] Processing job {job.job_id} for app {job.app_id}")
+
+        # Mark worker as busy
+        mark_worker_active(redis_client)
 
         # Validate app_id
         if job.app_id != "z-image":
@@ -248,7 +263,7 @@ def main():
                 for stream, messages in entries:
                     for message_id, fields in messages:
                         # Process job
-                        process_job(fields[b'payload'])
+                        process_job(fields[b'payload'], r)
 
                         # Acknowledge message
                         r.xack(STREAM_KEY, GROUP_NAME, message_id)

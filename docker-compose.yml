@@ -72,6 +72,7 @@ services:
     restart: unless-stopped
 
   z-image-worker:
+    profiles: ["gpu-workers"] 
     build:
       context: .
       dockerfile: worker/z-image_worker/Dockerfile
@@ -137,6 +138,7 @@ services:
 
   # SDXL Worker
   sdxl-worker:
+    profiles: ["gpu-workers"] 
     build:
       context: .
       dockerfile: worker/sdxl_worker/Dockerfile

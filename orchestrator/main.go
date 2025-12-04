@@ -99,7 +99,10 @@ func main() {
 	// 4. Start worker watcher (background goroutine)
 	go watchWorkers()
 
-	// 5. Start HTTP Server
+	// 5. Start worker scheduler (background goroutine)
+	go startWorkerScheduler()
+
+	// 6. Start HTTP Server
 	http.HandleFunc("/submit", submitJobHandler)
 	http.HandleFunc("/status/", statusHandler)
 	http.HandleFunc("/workers", workersHandler)
@@ -134,16 +137,6 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		http.Error(w, "Unknown App ID", http.StatusBadRequest)
 		return
-	}
-
-	// Switch to correct worker before job submission (for local GPU jobs)
-	if appConfig.Type == "local" {
-		log.Printf("[INFO] Ensuring correct worker is active for app: %s", req.AppID)
-		if err := switchWorker(req.AppID); err != nil {
-			log.Printf("[ERROR] Failed to switch worker: %v", err)
-			http.Error(w, fmt.Sprintf("Failed to prepare worker: %v", err), http.StatusInternalServerError)
-			return
-		}
 	}
 
 	jobID := uuid.New().String()
@@ -192,6 +185,10 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Update status to QUEUED
 		db.Exec("UPDATE jobs SET status = 'QUEUED' WHERE id = $1", jobID)
+
+		// Notify scheduler that this queue has pending jobs
+		rdb.SAdd(ctx, "queues:with_jobs", appConfig.Queue)
+
 		log.Printf("[INFO] [Local] Job %s queued on %s for %s", jobID, appConfig.Queue, req.AppID)
 
 	} else if appConfig.Type == "modal" {
@@ -352,7 +349,185 @@ func switchWorker(appID string) error {
 		return fmt.Errorf("worker manager error: %s - %v", string(output), err)
 	}
 
+	// Update active worker tracking
+	workerName := getWorkerNameForApp(appID)
+	setCurrentActiveWorker(workerName)
+
+	// Reset idle timer
+	rdb.Set(ctx, "orchestrator:worker_last_job_completion", time.Now().Format(time.RFC3339), 0)
+
 	log.Printf("[SUCCESS] Worker ready for app: %s", appID)
+	return nil
+}
+
+// startWorkerScheduler runs the worker scheduler loop in background
+func startWorkerScheduler() {
+	log.Println("[SCHEDULER] Starting worker scheduler...")
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		scheduleNextWorker()
+	}
+}
+
+// scheduleNextWorker checks queues and switches workers intelligently
+func scheduleNextWorker() {
+	// 1. Get current active worker
+	currentWorker := getCurrentActiveWorker()
+
+	// 2. If current worker is busy, don't interrupt
+	if currentWorker != "" && isWorkerBusy(currentWorker) {
+		return
+	}
+
+	// 3. Check all queues for pending jobs (priority order)
+	type queueInfo struct {
+		appID      string
+		queue      string
+		length     int64
+		workerName string
+	}
+
+	var queuesWithJobs []queueInfo
+
+	for appID, appConfig := range appRegistry {
+		if appConfig.Type != "local" {
+			continue
+		}
+
+		queueLength, err := rdb.XLen(ctx, appConfig.Queue).Result()
+		if err != nil {
+			log.Printf("[SCHEDULER] Error checking queue %s: %v", appConfig.Queue, err)
+			continue
+		}
+
+		if queueLength > 0 {
+			workerName := getWorkerNameForApp(appID)
+			queuesWithJobs = append(queuesWithJobs, queueInfo{
+				appID:      appID,
+				queue:      appConfig.Queue,
+				length:     queueLength,
+				workerName: workerName,
+			})
+		} else {
+			// Queue is empty, remove from set
+			rdb.SRem(ctx, "queues:with_jobs", appConfig.Queue)
+		}
+	}
+
+	// 4. If we found jobs in queues
+	if len(queuesWithJobs) > 0 {
+		// Pick the first queue with jobs (could add priority logic here)
+		selected := queuesWithJobs[0]
+
+		// Only switch if it's a different worker
+		if selected.workerName != currentWorker {
+			log.Printf("[SCHEDULER] Switching to %s for app %s (queue: %s, pending: %d jobs)",
+				selected.workerName, selected.appID, selected.queue, selected.length)
+
+			if err := switchWorker(selected.appID); err != nil {
+				log.Printf("[SCHEDULER] Failed to switch worker: %v", err)
+			}
+		}
+		return
+	}
+
+	// 5. No jobs in any queue - handle idle timeout
+	if currentWorker != "" {
+		idleTime := getWorkerIdleTime(currentWorker)
+		idleTimeout := 300 * time.Second // 5 minutes from config
+
+		if idleTime > idleTimeout {
+			log.Printf("[SCHEDULER] Stopping idle worker: %s (idle for %v)", currentWorker, idleTime)
+			if err := stopAllWorkers(); err != nil {
+				log.Printf("[SCHEDULER] Failed to stop idle worker: %v", err)
+			}
+		}
+	}
+}
+
+// getCurrentActiveWorker returns the currently active worker name
+func getCurrentActiveWorker() string {
+	val, err := rdb.Get(ctx, "orchestrator:active_worker").Result()
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
+// setCurrentActiveWorker sets the active worker name
+func setCurrentActiveWorker(workerName string) {
+	if workerName == "" {
+		rdb.Del(ctx, "orchestrator:active_worker")
+		rdb.Del(ctx, "orchestrator:worker_last_job_completion")
+	} else {
+		rdb.Set(ctx, "orchestrator:active_worker", workerName, 0)
+	}
+}
+
+// isWorkerBusy checks if worker is currently processing a job
+func isWorkerBusy(workerName string) bool {
+	// Check if worker has recently marked itself as active
+	key := fmt.Sprintf("worker:%s:last_active", workerName)
+	val, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		// Key doesn't exist or expired = worker is idle
+		return false
+	}
+
+	// Parse the timestamp
+	lastActiveTime, err := time.Parse(time.RFC3339, val)
+	if err != nil {
+		return false
+	}
+
+	// Consider busy if active within last 60 seconds
+	return time.Since(lastActiveTime) < 60*time.Second
+}
+
+// getWorkerIdleTime returns how long the worker has been idle
+func getWorkerIdleTime(workerName string) time.Duration {
+	// Check when worker last completed a job
+	val, err := rdb.Get(ctx, "orchestrator:worker_last_job_completion").Result()
+	if err != nil {
+		// No record, assume just started
+		return 0
+	}
+
+	lastCompletionTime, err := time.Parse(time.RFC3339, val)
+	if err != nil {
+		return 0
+	}
+
+	return time.Since(lastCompletionTime)
+}
+
+// getWorkerNameForApp returns the worker name for a given app_id
+func getWorkerNameForApp(appID string) string {
+	// This maps app_id to worker name based on workers.yaml
+	// For now, simple mapping (could load from config)
+	mapping := map[string]string{
+		"sdxl-image-gen": "sdxl-worker",
+		"z-image":        "z-image-worker",
+	}
+	return mapping[appID]
+}
+
+// stopAllWorkers stops all GPU workers
+func stopAllWorkers() error {
+	cmd := exec.Command("python3", "/app/scripts/worker_manager.py", "stop")
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return fmt.Errorf("worker manager error: %s - %v", string(output), err)
+	}
+
+	setCurrentActiveWorker("")
+	// Record that we stopped
+	rdb.Set(ctx, "orchestrator:worker_last_job_completion", time.Now().Format(time.RFC3339), 0)
+
+	log.Printf("[SUCCESS] All workers stopped")
 	return nil
 }
 

@@ -1,4 +1,5 @@
-# GPU Orchestrator Admin Dashboard - Implementation Plan
+# GPU Orchestrator Admin Dashboard - Implementation Plan (v2)
+## Updated for Dynamic Worker System
 
 ## Executive Summary
 
@@ -7,10 +8,16 @@ Build a comprehensive admin dashboard for complete control over the GPU Orchestr
 - **Simple password-based admin authentication**
 - **Complete job management** (view, filter, cancel, retry)
 - **Real-time GPU metrics** (utilization, VRAM, temperature)
+- **Dynamic worker monitoring & control** (switch workers, view status, cleanup GPU)
 - **User & cost tracking**
-- **Worker monitoring & control**
 
 **Architecture**: Standalone FastAPI frontend (port 8090) + Extended Go orchestrator APIs (port 8080)
+
+**Key System Features**:
+- **Exclusive Worker Mode**: Only one GPU worker active at a time
+- **Dynamic Worker Switching**: Automatic worker switching based on job app_id
+- **GPU Memory Management**: HTTP cleanup endpoints for releasing GPU memory
+- **etcd Service Discovery**: Workers register in etcd with TTL-based heartbeats
 
 **Timeline**: 4 implementation phases
 
@@ -111,13 +118,23 @@ CREATE TABLE admin_audit_log (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enhance workers table
-ALTER TABLE workers
-    ADD COLUMN IF NOT EXISTS app_ids TEXT[],
-    ADD COLUMN IF NOT EXISTS queue_names TEXT[],
-    ADD COLUMN IF NOT EXISTS current_job_id UUID,
-    ADD COLUMN IF NOT EXISTS jobs_completed INTEGER DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS jobs_failed INTEGER DEFAULT 0;
+-- GPU metrics table (TimescaleDB hypertable)
+CREATE TABLE gpu_metrics (
+    time TIMESTAMPTZ NOT NULL,
+    worker_id VARCHAR(100) NOT NULL,
+    gpu_id INTEGER NOT NULL,
+    gpu_utilization FLOAT,
+    vram_used_mb BIGINT,
+    vram_total_mb BIGINT,
+    temperature_c INTEGER,
+    power_draw_w INTEGER
+);
+
+-- Convert to TimescaleDB hypertable
+SELECT create_hypertable('gpu_metrics', 'time');
+
+-- Create index for efficient queries
+CREATE INDEX idx_gpu_metrics_worker_time ON gpu_metrics (worker_id, time DESC);
 ```
 
 ### 1.2 Admin Dashboard Frontend Structure
@@ -145,7 +162,7 @@ frontends/admin-dashboard/
     │   └── admin.css              # Dashboard styles
     └── js/
         ├── jobs.js                # Job management logic
-        ├── workers.js             # Worker monitoring
+        ├── workers.js             # Worker control & monitoring
         ├── metrics.js             # Chart rendering (Chart.js)
         └── sse.js                 # Server-Sent Events handler
 ```
@@ -207,7 +224,7 @@ async def logout(request: Request):
 
 ### 1.4 Docker Configuration
 
-**File**: `docker compose.yml`
+**File**: `docker-compose.yml`
 
 Add service:
 ```yaml
@@ -398,7 +415,7 @@ async def stream_jobs(request: Request, admin: dict = Depends(get_current_admin)
 
 ---
 
-## Phase 3: GPU Metrics & Worker Monitoring
+## Phase 3: GPU Metrics & Dynamic Worker Monitoring
 
 ### 3.1 Worker - GPU Metrics Collection
 
@@ -408,6 +425,7 @@ async def stream_jobs(request: Request, admin: dict = Depends(get_current_admin)
 import pynvml
 import threading
 import time
+import psycopg2
 from typing import List, Dict
 
 class GPUMetricsCollector:
@@ -466,71 +484,33 @@ class GPUMetricsCollector:
             time.sleep(self.interval)
 ```
 
-**File**: `worker/shared/worker_registration.py` (NEW FILE)
-
-```python
-def register_worker(worker_id: str, app_ids: List[str], queue_names: List[str]):
-    """Register worker in PostgreSQL workers table"""
-    conn = get_postgres_connection()
-    cursor = conn.cursor()
-
-    # Get GPU info
-    pynvml.nvmlInit()
-    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-    gpu_name = pynvml.nvmlDeviceGetName(handle)
-    memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-    gpu_memory_total_mb = memory_info.total // (1024 * 1024)
-
-    cursor.execute("""
-        INSERT INTO workers (worker_id, hostname, gpu_name, gpu_memory_total_mb,
-                            app_ids, queue_names, status, last_heartbeat, registered_at)
-        VALUES (%s, %s, %s, %s, %s, %s, 'ONLINE', NOW(), NOW())
-        ON CONFLICT (worker_id) DO UPDATE
-        SET hostname = EXCLUDED.hostname,
-            gpu_name = EXCLUDED.gpu_name,
-            app_ids = EXCLUDED.app_ids,
-            queue_names = EXCLUDED.queue_names,
-            status = 'ONLINE',
-            last_heartbeat = NOW()
-    """, (worker_id, os.uname().nodename, gpu_name, gpu_memory_total_mb,
-          app_ids, queue_names))
-    conn.commit()
-```
-
 **File**: `worker/z-image_worker/main.py`
 
-Modify main loop:
+Modify main loop (add after line 46):
 ```python
 from shared.gpu_metrics_collector import GPUMetricsCollector
-from shared.worker_registration import register_worker, update_worker_heartbeat
 
 def main():
-    # Register worker in PostgreSQL
-    register_worker(
-        worker_id=WORKER_ID,
-        app_ids=['z-image'],
-        queue_names=[STREAM_KEY]
-    )
+    logger.info(f"[STARTUP] Starting Z-Image Worker")
+    logger.info(f"Worker ID: {WORKER_ID}")
+    logger.info(f"Queue: {STREAM_KEY}")
+    logger.info(f"App ID: z-image")
 
     # Start GPU metrics collector
     metrics_collector = GPUMetricsCollector(worker_id=WORKER_ID, interval_seconds=5)
     metrics_collector.start()
+    logger.info("[SUCCESS] GPU metrics collector started")
 
-    last_heartbeat = time.time()
+    # Start HTTP server in background thread
+    http_thread = threading.Thread(target=start_http_server, daemon=True)
+    http_thread.start()
 
-    while True:
-        # Heartbeat update (every 10 seconds)
-        if time.time() - last_heartbeat > 10:
-            update_worker_heartbeat(WORKER_ID)
-            last_heartbeat = time.time()
-
-        # Process jobs (existing logic)
-        # ...
+    # ... rest of existing code
 ```
 
-**File**: `worker/z-image_worker/requirements.txt`
+**File**: `worker/sdxl_worker/main.py`
 
-Add: `pynvml==11.5.0`
+Apply same changes as above.
 
 **File**: `worker/shared/requirements.txt`
 
@@ -542,10 +522,45 @@ Add: `pynvml==11.5.0`
 
 Add handlers:
 ```go
-// GET /admin/workers/stats - Get worker stats with latest GPU metrics
-func adminWorkersStatsHandler(w http.ResponseWriter, r *http.Request) {
-    // Join workers table with latest gpu_metrics
-    // Return worker list with GPU info
+// GET /admin/workers/status - Get worker status from etcd and worker manager
+func adminWorkersStatusHandler(w http.ResponseWriter, r *http.Request) {
+    // Read from etcd /workers/* keys
+    // Call worker_manager.py status to get active worker
+    // Return worker list with status
+}
+
+// POST /admin/workers/start - Start a specific worker
+func adminWorkersStartHandler(w http.ResponseWriter, r *http.Request) {
+    // Parse request body: {worker_name: "z-image-worker"}
+    // Call worker_manager.py switch <worker-name> (starts if not running)
+    // Return success/failure with startup time estimate
+}
+
+// POST /admin/workers/stop - Stop the active worker
+func adminWorkersStopHandler(w http.ResponseWriter, r *http.Request) {
+    // Call worker_manager.py stop
+    // Return success/failure
+}
+
+// POST /admin/workers/switch - Switch to a different worker
+func adminWorkersSwitchHandler(w http.ResponseWriter, r *http.Request) {
+    // Parse request body: {worker_name: "z-image-worker"}
+    // Call worker_manager.py switch <worker-name>
+    // Return success/failure
+}
+
+// POST /admin/workers/{worker_id}/cleanup - Trigger GPU cleanup
+func adminWorkerCleanupHandler(w http.ResponseWriter, r *http.Request) {
+    // Get worker container name from worker_id
+    // Call HTTP POST to http://<worker-container>:8000/cleanup
+    // Return cleanup result
+}
+
+// GET /admin/workers/ui-info - Get UI URLs for all workers
+func adminWorkersUIInfoHandler(w http.ResponseWriter, r *http.Request) {
+    // Read apps.yaml to get frontend_url for each app
+    // Map worker names to their UI URLs
+    // Return: {worker_name: {app_id, ui_url, ui_port}}
 }
 
 // GET /admin/metrics/gpu - Query time-series GPU metrics
@@ -553,24 +568,16 @@ func adminGPUMetricsHandler(w http.ResponseWriter, r *http.Request) {
     // Query params: worker_id, start_time, end_time, interval
     // Use TimescaleDB time_bucket for aggregation
 }
+
+// GET /admin/metrics/latest - Get latest GPU metrics for all workers
+func adminLatestMetricsHandler(w http.ResponseWriter, r *http.Request) {
+    // Query latest gpu_metrics for each worker_id
+    // Return current GPU state
+}
 ```
 
 SQL queries:
 ```sql
--- Worker stats with latest GPU metrics
-SELECT
-    w.worker_id, w.hostname, w.gpu_name, w.status, w.last_heartbeat,
-    w.jobs_completed, w.jobs_failed, w.current_job_id,
-    gm.gpu_utilization, gm.vram_used_mb, gm.vram_total_mb,
-    gm.temperature_c, gm.power_draw_w
-FROM workers w
-LEFT JOIN LATERAL (
-    SELECT * FROM gpu_metrics
-    WHERE worker_id = w.worker_id
-    ORDER BY time DESC LIMIT 1
-) gm ON true
-ORDER BY w.worker_id;
-
 -- GPU metrics time-series
 SELECT
     time_bucket('5 minutes', time) AS bucket,
@@ -585,6 +592,14 @@ WHERE worker_id = $1
   AND time <= $3
 GROUP BY bucket, worker_id, gpu_id
 ORDER BY bucket;
+
+-- Latest metrics per worker
+SELECT DISTINCT ON (worker_id, gpu_id)
+    worker_id, gpu_id, time,
+    gpu_utilization, vram_used_mb, vram_total_mb,
+    temperature_c, power_draw_w
+FROM gpu_metrics
+ORDER BY worker_id, gpu_id, time DESC;
 ```
 
 ### 3.3 Admin Dashboard - Workers & Metrics Pages
@@ -592,39 +607,162 @@ ORDER BY bucket;
 **File**: `frontends/admin-dashboard/templates/workers.html`
 
 Features:
-- Worker cards showing: Worker ID, Status badge, GPU name, Hostname
-- Live GPU metrics: Utilization %, VRAM usage (X/Y MB), Temperature
-- Job stats: Jobs completed, Jobs failed
-- Current job indicator
+- **Active Worker Card** (highlighted):
+  - Worker name, App ID, Status badge (ONLINE/green)
+  - GPU name, VRAM total
+  - Live GPU metrics: Utilization %, VRAM usage (X/Y MB), Temperature
+  - **Link to Worker UI** (opens in new tab) - e.g., "Open Z-Image UI →"
+  - Actions: 
+    - **Cleanup GPU** button (orange)
+    - **Stop Worker** button (red)
+- **Inactive Workers List**:
+  - Worker name, App ID, Status (Stopped/gray)
+  - VRAM requirement
+  - **Link to Worker UI** (grayed out if worker stopped)
+  - Actions: 
+    - **Start Worker** button (green) - starts this worker only
+    - **Switch to Worker** button (purple) - stops current & starts this one
+- **Worker Switching**:
+  - Confirmation dialog before switching
+  - Progress indicator during switch (30-45s)
+  - Success/error notifications
+- **Worker Control**:
+  - Start button: Starts worker without stopping others (if exclusive mode allows)
+  - Stop button: Stops active worker completely
+  - Switch button: Atomic stop current + start new worker
 - Auto-refresh every 5 seconds via SSE
+
+**File**: `frontends/admin-dashboard/static/js/workers.js`
+
+```javascript
+// Start worker
+async function startWorker(workerName) {
+    if (!confirm(`Start ${workerName}?`)) {
+        return;
+    }
+
+    showProgress(`Starting ${workerName}...`);
+
+    const response = await fetch('/api/workers/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({worker_name: workerName})
+    });
+
+    if (response.ok) {
+        const data = await response.json();
+        showNotification(`${workerName} started successfully (took ${data.startup_time}s)`);
+        refreshWorkerStatus();
+    } else {
+        showError('Worker start failed');
+    }
+}
+
+// Stop worker
+async function stopWorker() {
+    if (!confirm('Stop the active worker? This will free up GPU memory.')) {
+        return;
+    }
+
+    showProgress('Stopping worker...');
+
+    const response = await fetch('/api/workers/stop', {
+        method: 'POST'
+    });
+
+    if (response.ok) {
+        showNotification('Worker stopped successfully');
+        refreshWorkerStatus();
+    } else {
+        showError('Worker stop failed');
+    }
+}
+
+// Switch worker
+async function switchWorker(workerName) {
+    if (!confirm(`Switch to ${workerName}? This will stop the current worker.`)) {
+        return;
+    }
+
+    showProgress(`Switching to ${workerName}...`);
+
+    const response = await fetch('/api/workers/switch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({worker_name: workerName})
+    });
+
+    if (response.ok) {
+        showNotification(`Successfully switched to ${workerName}`);
+        refreshWorkerStatus();
+    } else {
+        showError('Worker switch failed');
+    }
+}
+
+// Cleanup GPU
+async function cleanupGPU(workerId) {
+    const response = await fetch(`/api/workers/${workerId}/cleanup`, {method: 'POST'});
+    if (response.ok) {
+        showNotification('GPU memory cleaned successfully');
+        refreshMetrics();
+    }
+}
+
+// Open worker UI in new tab
+function openWorkerUI(workerName) {
+    // Fetch UI info and open in new tab
+    fetch('/api/workers/ui-info')
+        .then(res => res.json())
+        .then(data => {
+            const uiInfo = data[workerName];
+            if (uiInfo && uiInfo.ui_url) {
+                window.open(uiInfo.ui_url, '_blank');
+            } else {
+                showError('No UI available for this worker');
+            }
+        });
+}
+
+// Real-time updates
+const evtSource = new EventSource('/stream/workers');
+evtSource.onmessage = (event) => {
+    const workers = JSON.parse(event.data);
+    updateWorkerCards(workers);
+};
+```
 
 **File**: `frontends/admin-dashboard/templates/metrics.html`
 
 Features:
 - Time range selector (1h, 6h, 24h, 7d)
-- Worker selector dropdown
+- Worker selector dropdown (shows all workers with historical data)
 - Charts (using Chart.js):
   1. GPU Utilization % (line chart)
   2. VRAM Usage (area chart)
   3. Temperature (line chart)
   4. Power Draw (line chart)
-- Multi-GPU support (multiple lines per chart)
+- Multi-GPU support (multiple lines per chart if worker has multiple GPUs)
+- Export data as CSV
 
 **File**: `frontends/admin-dashboard/static/js/metrics.js`
 
 ```javascript
 // Initialize Chart.js charts
-let utilizationChart, vramChart, temperatureChart;
+let utilizationChart, vramChart, temperatureChart, powerChart;
 
 function initCharts() {
-    utilizationChart = new Chart(ctx, {
+    const ctx1 = document.getElementById('utilizationChart').getContext('2d');
+    utilizationChart = new Chart(ctx1, {
         type: 'line',
-        data: {...},
+        data: {datasets: []},
         options: {
             responsive: true,
-            scales: {y: {min: 0, max: 100}}
+            scales: {y: {min: 0, max: 100, title: {display: true, text: 'Utilization %'}}}
         }
     });
+
+    // Similar for other charts...
 }
 
 // Fetch and update metrics
@@ -633,14 +771,105 @@ async function updateMetrics(workerId, timeRange) {
     const data = await response.json();
     updateCharts(data);
 }
+
+function updateCharts(data) {
+    // Transform data and update Chart.js datasets
+    utilizationChart.data.datasets = data.map(gpu => ({
+        label: `GPU ${gpu.gpu_id}`,
+        data: gpu.utilization_points,
+        borderColor: getColorForGPU(gpu.gpu_id)
+    }));
+    utilizationChart.update();
+}
+```
+
+**File**: `frontends/admin-dashboard/app.py`
+
+Add routes:
+```python
+@app.get("/workers", response_class=HTMLResponse)
+async def workers_page(request: Request, admin: dict = Depends(get_current_admin)):
+    return templates.TemplateResponse("workers.html", {"request": request, "admin": admin})
+
+@app.get("/api/workers/status")
+async def get_workers_status(admin: dict = Depends(get_current_admin)):
+    # Proxy to orchestrator /admin/workers/status
+    response = requests.get(f"{ORCHESTRATOR_URL}/admin/workers/status")
+    return response.json()
+
+@app.post("/api/workers/start")
+async def start_worker(request: Request, admin: dict = Depends(get_current_admin)):
+    data = await request.json()
+    # Log audit action
+    log_audit_action(admin['id'], 'START_WORKER', 'worker', data['worker_name'])
+    # Proxy to orchestrator
+    response = requests.post(f"{ORCHESTRATOR_URL}/admin/workers/start", json=data)
+    return response.json()
+
+@app.post("/api/workers/stop")
+async def stop_worker(admin: dict = Depends(get_current_admin)):
+    # Log audit action
+    log_audit_action(admin['id'], 'STOP_WORKER', 'worker', 'active')
+    # Proxy to orchestrator
+    response = requests.post(f"{ORCHESTRATOR_URL}/admin/workers/stop")
+    return response.json()
+
+@app.post("/api/workers/switch")
+async def switch_worker(request: Request, admin: dict = Depends(get_current_admin)):
+    data = await request.json()
+    # Log audit action
+    log_audit_action(admin['id'], 'SWITCH_WORKER', 'worker', data['worker_name'])
+    # Proxy to orchestrator
+    response = requests.post(f"{ORCHESTRATOR_URL}/admin/workers/switch", json=data)
+    return response.json()
+
+@app.post("/api/workers/{worker_id}/cleanup")
+async def cleanup_worker(worker_id: str, admin: dict = Depends(get_current_admin)):
+    # Log audit action
+    log_audit_action(admin['id'], 'CLEANUP_GPU', 'worker', worker_id)
+    # Proxy to orchestrator
+    response = requests.post(f"{ORCHESTRATOR_URL}/admin/workers/{worker_id}/cleanup")
+    return response.json()
+
+@app.get("/api/workers/ui-info")
+async def get_workers_ui_info(admin: dict = Depends(get_current_admin)):
+    # Proxy to orchestrator to get worker UI URLs
+    response = requests.get(f"{ORCHESTRATOR_URL}/admin/workers/ui-info")
+    return response.json()
+
+@app.get("/metrics", response_class=HTMLResponse)
+async def metrics_page(request: Request, admin: dict = Depends(get_current_admin)):
+    return templates.TemplateResponse("metrics.html", {"request": request, "admin": admin})
+
+@app.get("/api/metrics/gpu")
+async def get_gpu_metrics(worker_id: str, range: str = "1h"):
+    # Proxy to orchestrator /admin/metrics/gpu
+    response = requests.get(f"{ORCHESTRATOR_URL}/admin/metrics/gpu", params={...})
+    return response.json()
+
+@app.get("/stream/workers")
+async def stream_workers(request: Request, admin: dict = Depends(get_current_admin)):
+    async def event_generator():
+        while True:
+            if await request.is_disconnected():
+                break
+            workers = fetch_worker_status()
+            yield f"data: {json.dumps(workers, default=str)}\n\n"
+            await asyncio.sleep(5)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 ```
 
 **Phase 3 Deliverables**:
 - ✅ GPU metrics collection in workers (every 5 seconds)
-- ✅ Workers table populated with GPU info
-- ✅ Worker monitoring dashboard with live stats
+- ✅ Dynamic worker monitoring dashboard
+- ✅ **Worker start/stop controls** (independent of switching)
+- ✅ Worker switching functionality
+- ✅ **Links to individual worker UIs** (opens in new tab)
+- ✅ GPU cleanup endpoint integration
 - ✅ GPU metrics visualization with time-series charts
 - ✅ Real-time updates via SSE
+- ✅ Audit logging for all worker control actions
 
 ---
 
@@ -657,11 +886,12 @@ func adminMetricsSummaryHandler(w http.ResponseWriter, r *http.Request) {
     // Return:
     // - Total jobs (all time)
     // - Jobs last 24h
-    // - Active workers count
+    // - Active worker info
     // - Total cost (all time)
     // - Jobs by status breakdown
     // - Jobs by app breakdown
     // - Average job duration by app
+    // - Worker uptime stats
 }
 ```
 
@@ -672,15 +902,20 @@ func adminMetricsSummaryHandler(w http.ResponseWriter, r *http.Request) {
 Layout:
 1. **Summary Cards** (top row):
    - Total Jobs
-   - Active Workers
+   - Active Worker (with app name)
    - Jobs (24h)
    - Total Cost
 
-2. **Charts** (middle):
+2. **Worker Status** (second row):
+   - Current worker card with live GPU metrics
+   - Quick switch buttons for other workers
+
+3. **Charts** (middle):
    - Job Status Pie Chart (COMPLETED, FAILED, PROCESSING, QUEUED)
    - Jobs per Hour (last 24h) Bar Chart
+   - Cost per App (pie chart)
 
-3. **Recent Jobs Table** (bottom):
+4. **Recent Jobs Table** (bottom):
    - Last 10 jobs with status, app, duration, cost
 
 ### 4.3 Configuration Viewer
@@ -688,9 +923,12 @@ Layout:
 **File**: `frontends/admin-dashboard/templates/config.html`
 
 Features:
-- Read-only view of `apps.yaml`
-- Table showing: App ID, Name, Type, Queue, GPU VRAM, Docker Image
-- Parameter schemas per app
+- **Apps Configuration** (from `apps.yaml`):
+  - Table showing: App ID, Name, Type, Queue, GPU VRAM, Docker Image
+  - Parameter schemas per app
+- **Workers Configuration** (from `workers.yaml`):
+  - Table showing: Worker Name, App ID, VRAM Required, Startup Time, Shutdown Time
+  - Settings: Exclusive mode, Idle timeout, Max startup/shutdown wait
 
 **File**: `orchestrator/admin_handlers.go`
 
@@ -698,6 +936,12 @@ Features:
 // GET /admin/config/apps - View apps configuration
 func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
     // Return apps.yaml as JSON
+}
+
+// GET /admin/config/workers - View workers configuration
+func adminWorkersConfigHandler(w http.ResponseWriter, r *http.Request) {
+    // Read /app/config/workers.yaml
+    // Return as JSON
 }
 ```
 
@@ -708,6 +952,7 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 - Responsive design (mobile-friendly)
 - Loading states and spinners
 - Toast notifications for actions
+- Status badges with icons
 - Dark mode support (optional)
 
 **Navigation** (`templates/base.html`):
@@ -726,6 +971,7 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 - Update `README.md` with admin dashboard section
 - Document API endpoints
 - Create admin user guide
+- Add worker switching guide
 
 **Phase 4 Deliverables**:
 - ✅ Complete overview dashboard
@@ -743,14 +989,172 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 2. `orchestrator/admin_handlers.go` - Admin API handlers
 3. `frontends/admin-dashboard/` - Complete new directory structure
 4. `worker/shared/gpu_metrics_collector.py` - GPU metrics collection
-5. `worker/shared/worker_registration.py` - Worker PostgreSQL registration
 
 ### Existing Files to Modify:
-1. `orchestrator/main.go:296` - Add admin API routes
-2. `worker/z-image_worker/main.py:87` - Integrate metrics collector & registration
-3. `worker/z-image_worker/requirements.txt` - Add pynvml
-4. `docker compose.yml:150` - Add admin-dashboard service
-5. `ADDING_NEW_APPS.md` - Document admin dashboard usage
+1. `orchestrator/main.go` - Add admin API routes
+2. `worker/z-image_worker/main.py` - Integrate metrics collector
+3. `worker/sdxl_worker/main.py` - Integrate metrics collector
+4. `worker/shared/requirements.txt` - Add pynvml
+5. `docker-compose.yml` - Add admin-dashboard service
+6. `ADDING_NEW_APPS.md` - Document admin dashboard usage
+
+---
+
+## Dynamic Worker System Integration
+
+### Worker Manager Integration
+
+The admin dashboard integrates with the existing `worker_manager.py` system:
+
+**Worker Switching Flow**:
+1. Admin clicks "Switch to Worker X" in dashboard
+2. Dashboard calls `POST /admin/workers/switch` with `{worker_name: "x-worker"}`
+3. Orchestrator calls `python3 /app/scripts/worker_manager.py switch x-worker`
+4. Worker manager:
+   - Stops current worker (if any)
+   - Waits for graceful shutdown (10s)
+   - Starts new worker
+   - Waits for startup (30-45s)
+   - Updates state file
+5. Dashboard polls for completion and shows success
+
+**GPU Cleanup Flow**:
+1. Admin clicks "Cleanup GPU" for active worker
+2. Dashboard calls `POST /admin/workers/{worker_id}/cleanup`
+3. Orchestrator calls `POST http://{worker-container}:8000/cleanup`
+4. Worker's HTTP server calls `handler.offload_model()`
+5. GPU memory is released
+6. Dashboard shows success notification
+
+**Worker Status Monitoring**:
+- Dashboard queries etcd `/workers/*` keys for heartbeats
+- Reads state file `/tmp/gpu_orchestrator_active_worker.txt` for active worker
+- Shows worker as ONLINE if heartbeat within last 10 seconds
+- Shows worker as OFFLINE otherwise
+
+### etcd Integration
+
+Workers register in etcd with TTL-based leases:
+
+```python
+# In worker main.py
+def register_worker_etcd():
+    etcd = etcd_client(host=ETCD_HOST, port=ETCD_PORT)
+    key = f"/workers/{WORKER_ID}"
+    lease = etcd.lease(10)  # 10 second TTL
+    worker_info = f"app={APP_ID},queue={STREAM_KEY},status=ONLINE"
+    etcd.put(key, worker_info, lease=lease)
+    return lease
+
+def keep_alive_etcd(lease):
+    lease.refresh()  # Called every 5 seconds
+```
+
+Admin dashboard queries etcd to get worker status:
+
+```go
+// In orchestrator admin_handlers.go
+func adminWorkersStatusHandler(w http.ResponseWriter, r *http.Request) {
+    // Get all workers from etcd
+    resp, _ := etcdCli.Get(ctx, "/workers/", clientv3.WithPrefix())
+    
+    // Parse worker info
+    workers := []WorkerStatus{}
+    for _, kv := range resp.Kvs {
+        // Parse key: /workers/z-image-worker-1
+        // Parse value: app=z-image,queue=jobs:z-image,status=ONLINE
+        workers = append(workers, parseWorkerInfo(kv))
+    }
+    
+    // Get active worker from worker_manager
+    activeWorker := getActiveWorkerFromManager()
+    
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "workers": workers,
+        "active_worker": activeWorker,
+    })
+}
+```
+
+### Worker UI Linking
+
+Each worker has an associated frontend UI (e.g., z-image-ui, sdxl-ui). The admin dashboard provides direct links to these UIs:
+
+**How it works**:
+
+1. **Read apps.yaml** - Orchestrator reads frontend URLs from app configuration:
+```yaml
+# apps.yaml
+apps:
+  - id: z-image
+    name: "Z-Image Turbo"
+    frontend_url: "http://localhost:3000"  # or http://z-image-ui:3000
+    # ...
+  
+  - id: sdxl-image-gen
+    name: "SDXL Image Generator"
+    frontend_url: "http://localhost:3001"  # or http://sdxl-ui:3001
+    # ...
+```
+
+2. **Map workers to UIs** - Admin dashboard maps worker names to their app UIs:
+```go
+// In orchestrator admin_handlers.go
+func adminWorkersUIInfoHandler(w http.ResponseWriter, r *http.Request) {
+    // Read workers.yaml to get worker -> app_id mapping
+    workersConfig := readWorkersConfig()
+    
+    // Read apps.yaml to get app_id -> frontend_url mapping
+    appsConfig := readAppsConfig()
+    
+    // Build response
+    uiInfo := make(map[string]interface{})
+    for workerName, workerConfig := range workersConfig {
+        appID := workerConfig.AppID
+        app := findAppByID(appsConfig, appID)
+        
+        uiInfo[workerName] = map[string]string{
+            "app_id": appID,
+            "app_name": app.Name,
+            "ui_url": app.FrontendURL,
+            "status": getWorkerStatus(workerName),
+        }
+    }
+    
+    json.NewEncoder(w).Encode(uiInfo)
+}
+```
+
+3. **Display in UI** - Workers page shows clickable links:
+```html
+<!-- Active Worker Card -->
+<div class="worker-card active">
+    <h3>z-image-worker</h3>
+    <p>App: Z-Image Turbo</p>
+    <a href="http://localhost:3000" target="_blank" class="ui-link">
+        Open Z-Image UI →
+    </a>
+    <button onclick="cleanupGPU('z-image-worker')">Cleanup GPU</button>
+    <button onclick="stopWorker()">Stop Worker</button>
+</div>
+
+<!-- Inactive Worker Card -->
+<div class="worker-card inactive">
+    <h3>sdxl-worker</h3>
+    <p>App: SDXL Image Generator</p>
+    <a href="http://localhost:3001" target="_blank" class="ui-link disabled">
+        Open SDXL UI → (worker stopped)
+    </a>
+    <button onclick="startWorker('sdxl-worker')">Start Worker</button>
+    <button onclick="switchWorker('sdxl-worker')">Switch to Worker</button>
+</div>
+```
+
+**Benefits**:
+- Quick access to worker UIs without remembering ports
+- Links are grayed out when worker is stopped
+- Opens in new tab for easy multitasking
+- Automatically updated when worker status changes
 
 ---
 
@@ -776,6 +1180,11 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
    - SQL injection prevention (parameterized queries)
    - Input validation on all endpoints
 
+5. **Worker Control Security**:
+   - Worker switching logged in audit log
+   - Cleanup endpoint only accessible from orchestrator network
+   - Worker manager script runs with limited permissions
+
 ---
 
 ## Technology Stack
@@ -794,11 +1203,12 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 - `pynvml` 11.5.0 - GPU metrics collection
 - `bcrypt` 4.1.2 - Password hashing
 - `psycopg2-binary` 2.9.9 - PostgreSQL client
+- `etcd3` 0.12.0 - etcd client (already in workers)
 
 **Infrastructure**:
 - PostgreSQL 15 + TimescaleDB (time-series metrics)
 - Redis 7.2 (job queuing)
-- etcd 3.5.9 (service discovery)
+- etcd 3.5.9 (service discovery, worker heartbeats)
 
 ---
 
@@ -806,7 +1216,7 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 
 1. **Phase 1 (Foundation)**: Database migration → Auth system → Basic UI structure
 2. **Phase 2 (Jobs)**: Go admin APIs → Jobs page → Cancel/retry functionality
-3. **Phase 3 (Metrics)**: Worker metrics collection → Metrics APIs → Visualization
+3. **Phase 3 (Metrics)**: Worker metrics collection → Metrics APIs → Worker control → Visualization
 4. **Phase 4 (Polish)**: Overview dashboard → Config viewer → Documentation
 
 **Dependencies**:
@@ -833,7 +1243,10 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 
 **Phase 3**:
 - [ ] GPU metrics appearing every 5 seconds in database
-- [ ] Workers table populated with correct GPU info
+- [ ] Worker status shows correct active worker
+- [ ] Can switch between workers successfully
+- [ ] Worker switch takes 30-45s and shows progress
+- [ ] GPU cleanup endpoint works
 - [ ] Worker cards show live metrics
 - [ ] Charts update in real-time
 - [ ] Historical data queries work
@@ -841,7 +1254,7 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 **Phase 4**:
 - [ ] Dashboard shows accurate summary stats
 - [ ] Cost calculation working correctly
-- [ ] Config viewer displays apps.yaml
+- [ ] Config viewer displays apps.yaml and workers.yaml
 - [ ] UI responsive on mobile
 - [ ] All navigation links work
 
@@ -852,10 +1265,13 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 1. **Multi-User Support**: Add user roles (admin, operator, viewer)
 2. **Alerting**: Email/Slack alerts for worker failures, job errors
 3. **Advanced Job Control**: Priority queues, job dependencies, scheduling
-4. **Configuration Management**: Edit apps.yaml via UI
+4. **Configuration Management**: Edit apps.yaml and workers.yaml via UI
 5. **Advanced Analytics**: Cost forecasting, resource optimization recommendations
 6. **API Keys**: Allow programmatic admin access
 7. **Export**: CSV/PDF reports for jobs and costs
+8. **Worker Preloading**: Keep models loaded in memory between switches
+9. **Multi-GPU Support**: Run multiple workers on different GPUs simultaneously
+10. **Idle Timeout Management**: Auto-stop workers after idle period (configurable)
 
 ---
 
@@ -863,7 +1279,35 @@ func adminAppsConfigHandler(w http.ResponseWriter, r *http.Request) {
 
 - **Phase 1**: 2-3 days (database + auth + basic structure)
 - **Phase 2**: 2-3 days (job management APIs + UI)
-- **Phase 3**: 3-4 days (metrics collection + visualization)
+- **Phase 3**: 4-5 days (metrics collection + worker control + visualization)
 - **Phase 4**: 2-3 days (overview + polish + docs)
 
-**Total**: ~10-13 days (1 developer)
+**Total**: ~11-14 days (1 developer)
+
+---
+
+## Key Differences from Original Plan
+
+### What Changed:
+1. **Worker Registration**: Workers now register in **etcd** (not PostgreSQL workers table)
+2. **Worker Management**: Added integration with `worker_manager.py` for dynamic switching
+3. **GPU Cleanup**: Added HTTP cleanup endpoint integration (port 8000)
+4. **Worker Status**: Status determined by etcd heartbeats + state file
+5. **Exclusive Mode**: Only one worker active at a time (enforced by worker_manager)
+6. **Worker Switching**: Added UI for manual worker switching with progress indicators
+
+### What Stayed the Same:
+1. Authentication system (password-based, sessions)
+2. Job management (list, cancel, retry)
+3. GPU metrics collection (pynvml, TimescaleDB)
+4. Cost tracking (automatic calculation)
+5. Admin dashboard architecture (FastAPI + Jinja2)
+6. Real-time updates (Server-Sent Events)
+
+### New Features:
+1. Worker switching UI with progress tracking
+2. GPU cleanup button for active worker
+3. Worker configuration viewer (workers.yaml)
+4. Integration with existing worker_manager.py
+5. etcd-based worker discovery
+6. State file monitoring for active worker
