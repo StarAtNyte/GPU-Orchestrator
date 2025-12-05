@@ -28,7 +28,7 @@ class ZImageUI {
         this.statusText = document.getElementById('statusText');
         this.logoHome = document.getElementById('logoHome');
 
-        // Sliders
+        // Sliders (optional - may not exist if advanced settings removed)
         this.stepsSlider = document.getElementById('steps');
         this.stepsValue = document.getElementById('stepsValue');
         this.shiftSlider = document.getElementById('shift');
@@ -50,39 +50,51 @@ class ZImageUI {
         this.logoHome.addEventListener('click', () => this.reset());
         this.downloadBtn.addEventListener('click', () => this.downloadImage());
 
-        // Slider updates
-        this.stepsSlider.addEventListener('input', (e) => {
-            this.stepsValue.textContent = e.target.value;
-        });
-        this.shiftSlider.addEventListener('input', (e) => {
-            this.shiftValue.textContent = parseFloat(e.target.value).toFixed(1);
-        });
+        // Slider updates (only if elements exist)
+        if (this.stepsSlider && this.stepsValue) {
+            this.stepsSlider.addEventListener('input', (e) => {
+                this.stepsValue.textContent = e.target.value;
+            });
+        }
+        if (this.shiftSlider && this.shiftValue) {
+            this.shiftSlider.addEventListener('input', (e) => {
+                this.shiftValue.textContent = parseFloat(e.target.value).toFixed(1);
+            });
+        }
 
-        // Random seed toggle
-        this.randomSeedCheckbox.addEventListener('change', (e) => {
-            this.seedGroup.style.display = e.target.checked ? 'none' : 'block';
-        });
+        // Random seed toggle (only if elements exist)
+        if (this.randomSeedCheckbox && this.seedGroup) {
+            this.randomSeedCheckbox.addEventListener('change', (e) => {
+                this.seedGroup.style.display = e.target.checked ? 'none' : 'block';
+            });
+        }
 
-        // Advanced settings toggle
+        // Advanced settings toggle (only if elements exist)
         this.advancedToggle = document.getElementById('advancedToggle');
         this.advancedSettings = document.getElementById('advancedSettings');
         this.advancedIcon = document.getElementById('advancedIcon');
         this.currentSteps = document.getElementById('currentSteps');
         this.currentShift = document.getElementById('currentShift');
 
-        this.advancedToggle.addEventListener('click', () => {
-            const isHidden = this.advancedSettings.style.display === 'none';
-            this.advancedSettings.style.display = isHidden ? 'block' : 'none';
-            this.advancedIcon.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
-        });
+        if (this.advancedToggle && this.advancedSettings && this.advancedIcon) {
+            this.advancedToggle.addEventListener('click', () => {
+                const isHidden = this.advancedSettings.style.display === 'none';
+                this.advancedSettings.style.display = isHidden ? 'block' : 'none';
+                this.advancedIcon.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+            });
+        }
 
-        // Update current values in toggle bar
-        this.stepsSlider.addEventListener('input', (e) => {
-            this.currentSteps.textContent = e.target.value;
-        });
-        this.shiftSlider.addEventListener('input', (e) => {
-            this.currentShift.textContent = parseFloat(e.target.value).toFixed(1);
-        });
+        // Update current values in toggle bar (only if elements exist)
+        if (this.stepsSlider && this.currentSteps) {
+            this.stepsSlider.addEventListener('input', (e) => {
+                this.currentSteps.textContent = e.target.value;
+            });
+        }
+        if (this.shiftSlider && this.currentShift) {
+            this.shiftSlider.addEventListener('input', (e) => {
+                this.currentShift.textContent = parseFloat(e.target.value).toFixed(1);
+            });
+        }
 
         // Example prompts
         const exampleBtns = document.querySelectorAll('.example-btn');
@@ -233,10 +245,10 @@ class ZImageUI {
         const data = {
             prompt: formData.get('prompt'),
             resolution: formData.get('resolution'),
-            steps: parseInt(formData.get('steps')),
-            shift: parseFloat(formData.get('shift')),
-            random_seed: this.randomSeedCheckbox.checked,
-            seed: parseInt(formData.get('seed'))
+            steps: parseInt(formData.get('steps') || '9'),
+            shift: parseFloat(formData.get('shift') || '3.0'),
+            random_seed: this.randomSeedCheckbox ? this.randomSeedCheckbox.checked : true,
+            seed: parseInt(formData.get('seed') || '42')
         };
 
         // Show loading state

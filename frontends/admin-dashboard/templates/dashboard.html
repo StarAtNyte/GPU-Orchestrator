@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - GPU Orchestrator Admin{% endblock %}
+
+{% block content %}
+<!-- PageHeading -->
+<header>
+    <p class="text-white text-4xl font-black leading-tight tracking-[-0.033em]">Dashboard</p>
+</header>
+
+<!-- Stats -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Total Jobs</p>
+        <p id="stat-total-jobs" class="text-white tracking-light text-3xl font-bold leading-tight">-</p>
+    </div>
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Active Worker</p>
+        <p id="stat-active-worker" class="text-white tracking-light text-2xl font-bold leading-tight">-</p>
+    </div>
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Jobs (24h)</p>
+        <p id="stat-jobs-24h" class="text-white tracking-light text-3xl font-bold leading-tight">-</p>
+    </div>
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Total Cost</p>
+        <p id="stat-total-cost" class="text-white tracking-light text-3xl font-bold leading-tight">$0.00</p>
+    </div>
+</section>
+
+<!-- Active Worker Status -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Active Worker Status</h2>
+    <div id="worker-status-card" class="rounded-xl p-4 sm:p-6 border border-[#363168] glassmorphism-card">
+        <div class="text-center text-gray-400 py-8">
+            <span class="material-symbols-outlined text-4xl mb-2">hourglass_empty</span>
+            <p>Loading worker status...</p>
+        </div>
+    </div>
+</section>
+
+<!-- Recent Jobs Table -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Recent Jobs</h2>
+    <div class="rounded-xl border border-[#363168] glassmorphism-card overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-300">
+                <thead class="text-xs text-gray-400 uppercase bg-[#252249]/50">
+                    <tr>
+                        <th class="px-6 py-3" scope="col">Job ID</th>
+                        <th class="px-6 py-3" scope="col">App Name</th>
+                        <th class="px-6 py-3" scope="col">Status</th>
+                        <th class="px-6 py-3" scope="col">Time</th>
+                        <th class="px-6 py-3" scope="col">Duration</th>
+                        <th class="px-6 py-3" scope="col">Cost</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-jobs-tbody">
+                    <tr>
+                        <td colspan="6" class="px-6 py-8 text-center text-gray-400">
+                            <span class="material-symbols-outlined text-4xl mb-2">hourglass_empty</span>
+                            <p>Loading recent jobs...</p>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

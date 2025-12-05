@@ -17,6 +17,7 @@ import json
 # Setup paths
 sys.path.append('/app')
 from shared import worker_pb2
+from shared.gpu_metrics_collector import GPUMetricsCollector
 
 # Setup logging
 logging.basicConfig(
@@ -213,6 +214,11 @@ def main():
     logger.info(f"Queue: {STREAM_KEY}")
     logger.info(f"App ID: z-image")
 
+    # Start GPU metrics collector
+    metrics_collector = GPUMetricsCollector(worker_id=WORKER_ID, interval_seconds=5)
+    metrics_collector.start()
+    logger.info("[SUCCESS] GPU metrics collector started")
+
     # Start HTTP server in background thread
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
@@ -265,8 +271,10 @@ def main():
                         # Process job
                         process_job(fields[b'payload'], r)
 
-                        # Acknowledge message
+                        # Acknowledge and delete message from stream
                         r.xack(STREAM_KEY, GROUP_NAME, message_id)
+                        r.xdel(STREAM_KEY, message_id)
+                        logger.info(f"[CLEANUP] Removed message {message_id} from stream")
 
         except KeyboardInterrupt:
             logger.info("Shutting down worker...")

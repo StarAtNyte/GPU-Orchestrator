@@ -136,6 +136,24 @@ services:
     ports:
       - "7862:7861"
 
+  # Admin Dashboard
+  admin-dashboard:
+    build:
+      context: frontends/admin-dashboard
+    container_name: admin-dashboard
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+      - postgres
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8080
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "8090:8090"
+
   # SDXL Worker
   sdxl-worker:
     profiles: ["gpu-workers"] 

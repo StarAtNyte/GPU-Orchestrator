@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Metrics - GPU Orchestrator Admin{% endblock %}
+
+{% block content %}
+<header>
+    <p class="text-white text-4xl font-black leading-tight tracking-[-0.033em]">GPU Metrics</p>
+</header>
+
+<!-- Filters -->
+<section class="glassmorphism-card rounded-xl p-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Worker</label>
+            <select id="filter-worker" class="w-full px-4 py-2 bg-[#252249] border border-[#363168] rounded-lg text-white focus:ring-2 focus:ring-[#6366f1]">
+                <option value="">Loading workers...</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Time Range</label>
+            <select id="filter-timerange" class="w-full px-4 py-2 bg-[#252249] border border-[#363168] rounded-lg text-white focus:ring-2 focus:ring-[#6366f1]">
+                <option value="1h">Last Hour</option>
+                <option value="6h">Last 6 Hours</option>
+                <option value="24h" selected>Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+            </select>
+        </div>
+        <div class="flex items-end">
+            <button onclick="loadMetrics()" class="w-full px-4 py-2 bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] hover:opacity-90 rounded-lg text-white font-medium">
+                Load Metrics
+            </button>
+        </div>
+    </div>
+</section>
+
+<!-- Charts -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- GPU Utilization -->
+    <div class="glassmorphism-card rounded-xl p-6">
+        <h3 class="text-white text-lg font-bold mb-4">GPU Utilization</h3>
+        <canvas id="utilizationChart"></canvas>
+    </div>
+
+    <!-- VRAM Usage -->
+    <div class="glassmorphism-card rounded-xl p-6">
+        <h3 class="text-white text-lg font-bold mb-4">VRAM Usage</h3>
+        <canvas id="vramChart"></canvas>
+    </div>
+
+    <!-- Temperature -->
+    <div class="glassmorphism-card rounded-xl p-6">
+        <h3 class="text-white text-lg font-bold mb-4">Temperature</h3>
+        <canvas id="temperatureChart"></canvas>
+    </div>
+
+    <!-- Power Draw -->
+    <div class="glassmorphism-card rounded-xl p-6">
+        <h3 class="text-white text-lg font-bold mb-4">Power Draw</h3>
+        <canvas id="powerChart"></canvas>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let utilizationChart, vramChart, temperatureChart, powerChart;
+
+    function initCharts() {
+        const commonOptions = {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#9590cb'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#9590cb' },
+                    grid: { color: '#363168' }
+                },
+                y: {
+                    ticks: { color: '#9590cb' },
+                    grid: { color: '#363168' }
+                }
+            }
+        };
+
+        // GPU Utilization Chart
+        const ctxUtil = document.getElementById('utilizationChart').getContext('2d');
+        utilizationChart = new Chart(ctxUtil, {
+            type: 'line',
+            data: { datasets: [] },
+            options: {
+                ...commonOptions,
+                scales: {
+                    ...commonOptions.scales,
+                    y: {
+                        ...commonOptions.scales.y,
+                        min: 0,
+                        max: 100,
+                        title: { display: true, text: 'Utilization %', color: '#9590cb' }
+                    }
+                }
+            }
+        });
+
+        // VRAM Chart
+        const ctxVram = document.getElementById('vramChart').getContext('2d');
+        vramChart = new Chart(ctxVram, {
+            type: 'line',
+            data: { datasets: [] },
+            options: {
+                ...commonOptions,
+                scales: {
+                    ...commonOptions.scales,
+                    y: {
+                        ...commonOptions.scales.y,
+                        title: { display: true, text: 'VRAM (MB)', color: '#9590cb' }
+                    }
+                }
+            }
+        });
+
+        // Temperature Chart
+        const ctxTemp = document.getElementById('temperatureChart').getContext('2d');
+        temperatureChart = new Chart(ctxTemp, {
+            type: 'line',
+            data: { datasets: [] },
+            options: {
+                ...commonOptions,
+                scales: {
+                    ...commonOptions.scales,
+                    y: {
+                        ...commonOptions.scales.y,
+                        title: { display: true, text: 'Temperature (°C)', color: '#9590cb' }
+                    }
+                }
+            }
+        });
+
+        // Power Draw Chart
+        const ctxPower = document.getElementById('powerChart').getContext('2d');
+        powerChart = new Chart(ctxPower, {
+            type: 'line',
+            data: { datasets: [] },
+            options: {
+                ...commonOptions,
+                scales: {
+                    ...commonOptions.scales,
+                    y: {
+                        ...commonOptions.scales.y,
+                        title: { display: true, text: 'Power (W)', color: '#9590cb' }
+                    }
+                }
+            }
+        });
+    }
+
+    async function loadMetrics() {
+        // Placeholder - will implement in Phase 3
+        console.log('Loading metrics...');
+    }
+
+    // Initialize charts on page load
+    initCharts();
+    loadMetrics();
+</script>
+{% endblock %}

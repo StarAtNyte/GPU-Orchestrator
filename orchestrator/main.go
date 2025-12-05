@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -106,6 +107,24 @@ func main() {
 	http.HandleFunc("/submit", submitJobHandler)
 	http.HandleFunc("/status/", statusHandler)
 	http.HandleFunc("/workers", workersHandler)
+
+	// Admin API endpoints
+	http.HandleFunc("/admin/jobs", adminJobsHandler)
+	http.HandleFunc("/admin/jobs/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/cancel") {
+			adminCancelJobHandler(w, r)
+		} else if strings.HasSuffix(r.URL.Path, "/retry") {
+			adminRetryJobHandler(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	http.HandleFunc("/admin/workers/status", adminWorkersStatusHandler)
+	http.HandleFunc("/admin/workers/action", adminWorkerActionHandler)
+	http.HandleFunc("/admin/metrics/gpu", adminGPUMetricsHandler)
+	http.HandleFunc("/admin/metrics/latest", adminLatestMetricsHandler)
+	http.HandleFunc("/admin/metrics/summary", adminSummaryHandler)
+	http.HandleFunc("/admin/config", adminConfigHandler)
 
 	log.Println("[INFO] Orchestrator running on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -220,6 +239,23 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 // watchWorkers monitors etcd for worker registration and heartbeats
 func watchWorkers() {
 	log.Println("[INFO] Watching for workers in etcd...")
+
+	// First, load existing workers from etcd
+	resp, err := etcdCli.Get(ctx, "/workers/", clientv3.WithPrefix())
+	if err != nil {
+		log.Printf("[ERROR] Failed to load existing workers from etcd: %v", err)
+	} else {
+		for _, kv := range resp.Kvs {
+			workerID := string(kv.Key)[len("/workers/"):]
+			workers[workerID] = &WorkerInfo{
+				WorkerID:      workerID,
+				LastHeartbeat: time.Now(),
+				Status:        "ONLINE",
+			}
+			log.Printf("[INFO] Loaded existing worker: %s", workerID)
+		}
+		log.Printf("[INFO] Loaded %d existing worker(s) from etcd", len(resp.Kvs))
+	}
 
 	// Watch the /workers/ prefix for all worker registrations
 	watchChan := etcdCli.Watch(ctx, "/workers/", clientv3.WithPrefix())
@@ -396,22 +432,44 @@ func scheduleNextWorker() {
 			continue
 		}
 
-		queueLength, err := rdb.XLen(ctx, appConfig.Queue).Result()
+		// Check for PENDING messages in the consumer group
+		// This ensures we only count unprocessed jobs, not acknowledged/stuck messages
+		groupName := appID + "-workers" // Consumer group naming: {app-id}-workers
+
+		pending, err := rdb.XPending(ctx, appConfig.Queue, groupName).Result()
 		if err != nil {
-			log.Printf("[SCHEDULER] Error checking queue %s: %v", appConfig.Queue, err)
+			// Consumer group might not exist yet, check stream length as fallback
+			queueLength, err := rdb.XLen(ctx, appConfig.Queue).Result()
+			if err != nil {
+				log.Printf("[SCHEDULER] Error checking queue %s: %v", appConfig.Queue, err)
+				continue
+			}
+			// Only act if there are messages in a new queue
+			if queueLength > 0 {
+				workerName := getWorkerNameForApp(appID)
+				queuesWithJobs = append(queuesWithJobs, queueInfo{
+					appID:      appID,
+					queue:      appConfig.Queue,
+					length:     queueLength,
+					workerName: workerName,
+				})
+			}
 			continue
 		}
 
-		if queueLength > 0 {
+		// Count ONLY pending (unacknowledged) messages
+		pendingCount := pending.Count
+
+		if pendingCount > 0 {
 			workerName := getWorkerNameForApp(appID)
 			queuesWithJobs = append(queuesWithJobs, queueInfo{
 				appID:      appID,
 				queue:      appConfig.Queue,
-				length:     queueLength,
+				length:     pendingCount,
 				workerName: workerName,
 			})
 		} else {
-			// Queue is empty, remove from set
+			// No pending jobs, remove from set
 			rdb.SRem(ctx, "queues:with_jobs", appConfig.Queue)
 		}
 	}

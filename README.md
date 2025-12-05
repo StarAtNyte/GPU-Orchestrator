@@ -306,6 +306,99 @@ FROM jobs
 GROUP BY app_id, status;
 ```
 
+### Redis Queue Debugging
+
+Check queue health and troubleshoot stuck jobs:
+
+```bash
+# List all job queues in Redis
+docker exec redis redis-cli KEYS "jobs:*"
+
+# Check queue lengths (total messages in stream)
+docker exec redis redis-cli XLEN jobs:z-image
+docker exec redis redis-cli XLEN jobs:sdxl
+
+# Check PENDING messages (unprocessed jobs in consumer group)
+# This is what the scheduler uses to decide if workers are needed
+# Consumer group naming: {app-id}-workers (e.g., z-image-workers, sdxl-workers)
+docker exec redis redis-cli XPENDING jobs:z-image z-image-workers
+docker exec redis redis-cli XPENDING jobs:sdxl sdxl-workers
+
+# View detailed pending info (shows which worker has which job)
+docker exec redis redis-cli XPENDING jobs:z-image z-image-workers - + 10
+docker exec redis redis-cli XPENDING jobs:sdxl sdxl-workers - + 10
+
+# Clear stuck/phantom messages (emergency use only!)
+# WARNING: This deletes the entire queue including unprocessed jobs
+docker exec redis redis-cli DEL jobs:z-image
+docker exec redis redis-cli DEL jobs:sdxl
+
+# Inspect specific message in stream
+docker exec redis redis-cli XRANGE jobs:z-image - + COUNT 1
+docker exec redis redis-cli XRANGE jobs:sdxl - + COUNT 1
+
+# View consumer group info
+docker exec redis redis-cli XINFO GROUPS jobs:z-image
+docker exec redis redis-cli XINFO GROUPS jobs:sdxl
+
+# View which workers are in a consumer group
+docker exec redis redis-cli XINFO CONSUMERS jobs:z-image z-image-workers
+docker exec redis redis-cli XINFO CONSUMERS jobs:sdxl sdxl-workers
+```
+
+**Queue and Consumer Group Naming:**
+- Queue names: `jobs:{app-id}` (e.g., `jobs:z-image`, `jobs:sdxl`)
+- Consumer groups: `{app-id}-workers` (e.g., `z-image-workers`, `sdxl-workers`)
+- Queues/groups only exist after the first worker starts or first job is submitted
+- Running `XPENDING` on non-existent queue shows: `NOGROUP No such key`
+
+**How Queue Cleanup Works:**
+- Workers acknowledge messages with `XACK` after processing
+- Workers delete messages with `XDEL` to remove from stream entirely
+- Scheduler checks `XPENDING` (not `XLEN`) to count unprocessed jobs
+- This prevents stuck/acknowledged messages from triggering worker switches
+
+**Troubleshooting Queue Issues:**
+
+1. **Workers keep switching randomly**: Check for phantom messages
+   ```bash
+   # First, list all queues
+   docker exec redis redis-cli KEYS "jobs:*"
+
+   # For each queue, check pending count
+   docker exec redis redis-cli XPENDING jobs:z-image z-image-workers
+   docker exec redis redis-cli XPENDING jobs:sdxl sdxl-workers
+
+   # If pending count > 0 but you didn't submit jobs, messages are stuck
+   # Clear the specific queue:
+   docker exec redis redis-cli DEL jobs:z-image
+   ```
+
+2. **NOGROUP error when checking queue**: Normal if worker never started
+   ```bash
+   # Error: "NOGROUP No such key 'jobs:sdxl' or consumer group 'sdxl-workers'"
+   # This means the queue/group doesn't exist yet (worker never ran)
+   # No action needed - queue will be created when worker starts
+   ```
+
+3. **Jobs stuck in QUEUED state**: Worker might have crashed mid-processing
+   ```bash
+   # Check worker logs
+   docker compose logs z-image-worker
+
+   # Check pending messages
+   docker exec redis redis-cli XPENDING jobs:z-image z-image-workers - + 10
+
+   # Look for messages assigned to dead workers
+   # If found, restart the worker or manually delete the queue
+   ```
+
+4. **Queue length doesn't match pending count**: Normal!
+   - `XLEN` = total messages in stream (including acknowledged)
+   - `XPENDING` = only unprocessed messages
+   - Scheduler uses `XPENDING`, not `XLEN`
+   - Example: `XLEN=5, XPENDING=0` means 5 completed jobs still in stream
+
 ## Available Applications
 
 ### Z-Image Image Generation

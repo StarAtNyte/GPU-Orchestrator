@@ -20,6 +20,7 @@ RESOLUTIONS = [
     "1024x1024 ( 1:1 )",
     "576x1024 ( 9:16 )",
     "896x1200 ( 3:4 )",
+    "1024x576 ( 16:9 )"
 ]
 
 # Example prompts with titles
