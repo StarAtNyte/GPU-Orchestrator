@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Login - GPU Orchestrator Admin</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "background-dark": "#111022",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        .glassmorphism-card {
+            background: rgba(37, 34, 73, 0.5);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(54, 49, 104, 0.6);
+        }
+    </style>
+</head>
+
+<body class="bg-background-dark font-display text-white">
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-md">
+            <!-- Logo and Title -->
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] rounded-full size-16 mb-4">
+                    <span class="material-symbols-outlined text-white text-4xl">developer_board</span>
+                </div>
+                <h1 class="text-white text-3xl font-bold mb-2">GPU Orchestrator</h1>
+                <p class="text-gray-400 text-base">Admin Dashboard</p>
+            </div>
+
+            <!-- Login Form -->
+            <div class="glassmorphism-card rounded-xl p-8">
+                <h2 class="text-white text-2xl font-bold mb-6">Sign In</h2>
+
+                {% if error %}
+                <div class="mb-6 p-4 rounded-lg bg-red-500/20 border border-red-500/50 text-red-400 flex items-center gap-3">
+                    <span class="material-symbols-outlined">error</span>
+                    <span>{{ error }}</span>
+                </div>
+                {% endif %}
+
+                <form method="POST" action="/login" class="space-y-6">
+                    <div>
+                        <label for="username" class="block text-sm font-medium text-gray-300 mb-2">
+                            Username
+                        </label>
+                        <input
+                            type="text"
+                            id="username"
+                            name="username"
+                            required
+                            autofocus
+                            class="w-full px-4 py-3 bg-[#252249] border border-[#363168] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent"
+                            placeholder="Enter your username"
+                        />
+                    </div>
+
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-gray-300 mb-2">
+                            Password
+                        </label>
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            required
+                            class="w-full px-4 py-3 bg-[#252249] border border-[#363168] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:border-transparent"
+                            placeholder="Enter your password"
+                        />
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] hover:opacity-90 transition-opacity rounded-lg text-white font-semibold text-base"
+                    >
+                        <span class="material-symbols-outlined">login</span>
+                        Sign In
+                    </button>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-[#363168]">
+                    <p class="text-center text-sm text-gray-400">
+                        Default credentials: <span class="text-white font-medium">admin / admin123</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center mt-8 text-sm text-gray-500">
+                <p>GPU Orchestrator Admin Dashboard v1.0</p>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

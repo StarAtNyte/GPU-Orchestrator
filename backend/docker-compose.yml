@@ -1,0 +1,217 @@
+# GPU Orchestrator Backend - Ubuntu PC
+# Runs orchestrator, workers, and infrastructure (PostgreSQL, Redis, etcd)
+
+version: '3.8'
+
+services:
+  # PostgreSQL - Job tracking
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orchestrator}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Job queuing
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # etcd - Worker registry and service discovery
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: etcd
+    environment:
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+    ports:
+      - "2379:2379"
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=localhost:2379", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # GPU Orchestrator - Job routing
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: orchestrator
+    depends_on:
+      - postgres
+      - redis
+      - etcd
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      REDIS_URL: redis:6379
+      ETCD_ENDPOINT: etcd:2379
+      APP_REGISTRY_PATH: /app/config/apps.yaml
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config/apps.yaml:/app/config/apps.yaml
+      - ./scripts:/app/scripts
+    networks:
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/workers"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # GPU Workers - Model inference
+  sdxl-worker:
+    build:
+      context: ./worker/sdxl-image-gen_worker
+      dockerfile: Dockerfile
+    container_name: sdxl-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: sdxl-worker
+      APP_ID: sdxl-image-gen
+      HF_TOKEN: ${HF_TOKEN:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+  z-image-worker:
+    build:
+      context: ./worker/z-image-gen_worker
+      dockerfile: Dockerfile
+    container_name: z-image-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: z-image-worker
+      APP_ID: z-image
+      HF_TOKEN: ${HF_TOKEN:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+  whisper-worker:
+    build:
+      context: ./worker/whisper-stt_worker
+      dockerfile: Dockerfile
+    container_name: whisper-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: whisper-worker
+      APP_ID: whisper-stt
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+  qwen-worker:
+    build:
+      context: ./worker/qwen-image-2512_worker
+      dockerfile: Dockerfile
+    container_name: qwen-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: qwen-worker
+      APP_ID: qwen-image-2512
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  backend-network:
+    driver: bridge

@@ -1,0 +1,103 @@
+# GPU Orchestrator Frontend - Linux Server
+# Lightweight UI services that poll remote orchestrator
+
+version: '3.8'
+
+services:
+  main-dashboard:
+    build:
+      context: ./main-dashboard
+      dockerfile: Dockerfile
+    container_name: main-dashboard
+    ports:
+      - "8080:8888"
+    environment:
+      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+  sdxl-ui:
+    build:
+      context: ./sdxl-ui
+      dockerfile: Dockerfile
+    container_name: sdxl-ui
+    ports:
+      - "7861:7861"
+    environment:
+      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7861/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  z-image-ui:
+    build:
+      context: ./z-image-ui
+      dockerfile: Dockerfile
+    container_name: z-image-ui
+    ports:
+      - "7862:7862"
+    environment:
+      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7862/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  qwen-ui:
+    build:
+      context: ./qwen-ui
+      dockerfile: Dockerfile
+    container_name: qwen-ui
+    ports:
+      - "7863:7863"
+    environment:
+      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7863/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  admin-dashboard:
+    build:
+      context: ./admin-dashboard
+      dockerfile: Dockerfile
+    container_name: admin-dashboard
+    ports:
+      - "8000:8000"
+    environment:
+      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  frontend-network:
+    driver: bridge

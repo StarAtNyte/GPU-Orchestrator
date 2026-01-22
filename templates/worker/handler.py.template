@@ -1,0 +1,76 @@
+"""
+{{APP_NAME}} Handler
+Implement your model logic here
+"""
+
+import logging
+from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
+
+class {{CLASS_NAME}}Handler:
+    def __init__(self):
+        """Initialize the handler - load models here"""
+        self.model = None
+
+    def load_model(self):
+        """Load your ML model once, cache for future requests"""
+        if self.model is not None:
+            return
+
+        logger.info("Loading {{APP_NAME}} model...")
+
+        # TODO: Replace with your model loading code
+        # Example:
+        # from transformers import AutoModel
+        # self.model = AutoModel.from_pretrained("model-name")
+
+        logger.info("Model loaded successfully")
+
+    def process(self, job_id: str, params: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Process a single job
+
+        Args:
+            job_id: Unique job identifier
+            params: Dictionary of parameters from the job request
+
+        Returns:
+            Dictionary with 'success' boolean and either 'output' or 'error'
+        """
+        try:
+            self.load_model()
+
+            # TODO: Extract your parameters
+            # Example:
+            # input_text = params.get("input", "")
+            # max_length = int(params.get("max_length", "100"))
+
+            logger.info(f"Processing job {job_id}...")
+
+            # TODO: Run your model inference
+            # Example:
+            # result = self.model.generate(input_text, max_length=max_length)
+
+            # TODO: Format your output
+            # Example:
+            # output = {
+            #     "generated_text": result,
+            #     "length": len(result)
+            # }
+
+            output = {
+                "message": "Replace this with your actual output"
+            }
+
+            return {
+                "success": True,
+                "output": output
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing job: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }

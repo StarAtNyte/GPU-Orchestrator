@@ -1,0 +1,31 @@
+# Core dependencies for worker communication
+redis==5.0.1
+async-timeout>=4.0.0  # Required by redis asyncio
+protobuf==3.20.3  # Compatible with etcd3
+psycopg2-binary==2.9.9
+etcd3==0.12.0
+
+# TODO: Add your ML/AI dependencies below
+# Examples:
+
+# For PyTorch models:
+# torch>=2.1.0
+# torchvision>=0.16.0
+
+# For diffusion models:
+# diffusers>=0.25.0
+# transformers>=4.36.0
+# accelerate>=0.25.0
+
+# For LLMs with vLLM:
+# vllm>=0.3.0
+
+# For audio processing:
+# openai-whisper>=20231117
+# librosa>=0.10.0
+
+# For computer vision:
+# opencv-python>=4.8.0
+# pillow>=10.0.0
+
+# For specific models, add their requirements here

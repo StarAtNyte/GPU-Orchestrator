@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qwen Image 2512 Fast</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #8b5cf6;
+            --dark: #1f2937;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+            color: var(--dark);
+            min-height: 100vh;
+        }
+        
+        nav {
+            background: white;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            padding: 16px 32px;
+        }
+        
+        .nav-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: var(--light);
+            border-radius: 20px;
+            font-size: 13px;
+        }
+        
+        .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f59e0b;
+            animation: pulse 2s infinite;
+        }
+        
+        .indicator.ready {
+            background: #10b981;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 32px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .subtitle {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        
+        .layout {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 32px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            border: 1px solid var(--border);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        textarea, select, input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        button:hover {
+            background: #7c3aed;
+        }
+        
+        button:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .result-image {
+            max-width: 100%;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            margin-top: 16px;
+            font-weight: 500;
+            color: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-content">
+            <div class="logo">🎨 Qwen Image 2512</div>
+            <div class="status-badge">
+                <span class="indicator"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="header">
+            <h1>Qwen Image 2512 Fast</h1>
+            <p class="subtitle">Ultra-fast image generation powered by Qwen</p>
+        </div>
+
+        <div class="layout">
+            <div class="panel">
+                <form id="generateForm">
+                    <div class="form-group">
+                        <label>Prompt</label>
+                        <textarea id="prompt" rows="6" placeholder="Describe the image you want..." required></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Negative Prompt</label>
+                        <textarea id="negativePrompt" rows="3" placeholder="Things to avoid..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Resolution</label>
+                        <select id="resolution">
+                            <option value="512x512">512x512</option>
+                            <option value="768x768">768x768</option>
+                            <option value="1024x1024" selected>1024x1024</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Steps</label>
+                        <input type="number" id="steps" value="30" min="1" max="100">
+                    </div>
+                    
+                    <button type="submit" id="generateBtn">Generate Image</button>
+                </form>
+            </div>
+
+            <div class="panel" id="resultPanel">
+                <div class="loading">
+                    <p style="text-align: center; color: #9ca3af;">Your image will appear here</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class QwenUI {
+            constructor() {
+                this.form = document.getElementById('generateForm');
+                this.resultPanel = document.getElementById('resultPanel');
+                this.statusText = document.getElementById('statusText');
+                this.currentJobId = null;
+                
+                this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+                this.checkHealth();
+                setInterval(() => this.checkHealth(), 5000);
+            }
+
+            async checkHealth() {
+                try {
+                    const response = await fetch('/health');
+                    const data = await response.json();
+                    const connected = data.orchestrator === 'connected';
+                    this.statusText.textContent = connected ? 'Ready' : 'Disconnected';
+                    this.statusText.parentElement.querySelector('.indicator').className = 
+                        connected ? 'indicator ready' : 'indicator';
+                } catch(e) {
+                    this.statusText.textContent = 'Disconnected';
+                }
+            }
+
+            async handleSubmit(e) {
+                e.preventDefault();
+                
+                const resolution = document.getElementById('resolution').value.split('x');
+                
+                this.resultPanel.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-text">Generating...</div></div>';
+                this.form.querySelector('button').disabled = true;
+                
+                try {
+                    const response = await fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: document.getElementById('prompt').value,
+                            negative_prompt: document.getElementById('negativePrompt').value,
+                            width: parseInt(resolution[0]),
+                            height: parseInt(resolution[1]),
+                            num_inference_steps: parseInt(document.getElementById('steps').value)
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        this.currentJobId = data.job_id;
+                        this.pollStatus();
+                    }
+                } catch(e) {
+                    this.resultPanel.innerHTML = '<div class="result"><p>Error: ' + e.message + '</p></div>';
+                } finally {
+                    this.form.querySelector('button').disabled = false;
+                }
+            }
+
+            async pollStatus() {
+                const checkStatus = setInterval(async () => {
+                    try {
+                        const response = await fetch(`/api/status/${this.currentJobId}`);
+                        const data = await response.json();
+                        
+                        if (data.status === 'COMPLETED' && data.result) {
+                            clearInterval(checkStatus);
+                            this.resultPanel.innerHTML = `
+                                <div class="result">
+                                    <img src="data:image/png;base64,${data.result}" class="result-image" alt="Generated">
+                                    <button onclick="location.reload()">Generate Another</button>
+                                </div>
+                            `;
+                        } else if (data.status === 'FAILED') {
+                            clearInterval(checkStatus);
+                            this.resultPanel.innerHTML = '<div class="result"><p>Error: ' + (data.error || 'Generation failed') + '</p></div>';
+                        }
+                    } catch(e) {}
+                }, 2000);
+            }
+        }
+        
+        new QwenUI();
+    </script>
+</body>
+</html>

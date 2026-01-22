@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - GPU Orchestrator Admin{% endblock %}
+
+{% block content %}
+<!-- PageHeading -->
+<header class="flex items-center justify-between">
+    <div>
+        <p class="text-white text-4xl font-black leading-tight tracking-[-0.033em]">Dashboard</p>
+        <p class="text-gray-400 text-sm mt-1">Last updated: <span id="last-update">Never</span></p>
+    </div>
+    <button id="refresh-btn" class="flex items-center gap-2 px-4 py-2 bg-[#252249] hover:bg-[#363168] rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-white">refresh</span>
+        <span class="text-white text-sm">Refresh</span>
+    </button>
+</header>
+
+<!-- Stats -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Total Jobs</p>
+        <div id="stat-total-jobs" class="skeleton-loader text-white tracking-light text-3xl font-bold leading-tight">-</div>
+    </div>
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Active Worker</p>
+        <div id="stat-active-worker" class="skeleton-loader text-white tracking-light text-2xl font-bold leading-tight">-</div>
+    </div>
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Jobs (24h)</p>
+        <div id="stat-jobs-24h" class="skeleton-loader text-white tracking-light text-3xl font-bold leading-tight">-</div>
+    </div>
+    <div class="flex flex-col gap-2 rounded-xl p-6 border border-[#363168] glassmorphism-card">
+        <p class="text-gray-300 text-base font-medium leading-normal">Total Cost</p>
+        <div id="stat-total-cost" class="skeleton-loader text-white tracking-light text-3xl font-bold leading-tight">$0.00</div>
+    </div>
+</section>
+
+<!-- Available Apps -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Available Applications</h2>
+    <div id="apps-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="rounded-xl p-6 border border-[#363168] glassmorphism-card text-center">
+            <div class="skeleton-box h-20 w-20 mx-auto mb-4"></div>
+            <div class="skeleton-box h-4 w-32 mx-auto mb-2"></div>
+            <div class="skeleton-box h-3 w-full"></div>
+        </div>
+        <div class="rounded-xl p-6 border border-[#363168] glassmorphism-card text-center">
+            <div class="skeleton-box h-20 w-20 mx-auto mb-4"></div>
+            <div class="skeleton-box h-4 w-32 mx-auto mb-2"></div>
+            <div class="skeleton-box h-3 w-full"></div>
+        </div>
+        <div class="rounded-xl p-6 border border-[#363168] glassmorphism-card text-center">
+            <div class="skeleton-box h-20 w-20 mx-auto mb-4"></div>
+            <div class="skeleton-box h-4 w-32 mx-auto mb-2"></div>
+            <div class="skeleton-box h-3 w-full"></div>
+        </div>
+    </div>
+</section>
+
+<!-- Active Worker Status -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Active Worker Status</h2>
+    <div id="worker-status-card" class="rounded-xl p-4 sm:p-6 border border-[#363168] glassmorphism-card">
+        <div class="text-center text-gray-400 py-8">
+            <div class="skeleton-box h-6 w-48 mx-auto mb-4"></div>
+            <div class="skeleton-box h-4 w-32 mx-auto"></div>
+        </div>
+    </div>
+</section>
+
+<!-- Recent Jobs Table -->
+<section class="space-y-4">
+    <div class="flex items-center justify-between px-2">
+        <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em]">Recent Jobs</h2>
+        <button id="export-csv-btn" class="flex items-center gap-2 px-3 py-1.5 bg-[#252249] hover:bg-[#363168] rounded-lg transition-colors text-sm">
+            <span class="material-symbols-outlined text-white text-lg">download</span>
+            <span class="text-white">Export CSV</span>
+        </button>
+    </div>
+    <div class="rounded-xl border border-[#363168] glassmorphism-card overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-300">
+                <thead class="text-xs text-gray-400 uppercase bg-[#252249]/50">
+                    <tr>
+                        <th class="px-6 py-3 cursor-pointer hover:bg-[#363168]/30" scope="col" data-sort="id">
+                            <div class="flex items-center gap-1">
+                                Job ID
+                                <span class="material-symbols-outlined text-xs">unfold_more</span>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 cursor-pointer hover:bg-[#363168]/30" scope="col" data-sort="app_id">
+                            <div class="flex items-center gap-1">
+                                App Name
+                                <span class="material-symbols-outlined text-xs">unfold_more</span>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 cursor-pointer hover:bg-[#363168]/30" scope="col" data-sort="status">
+                            <div class="flex items-center gap-1">
+                                Status
+                                <span class="material-symbols-outlined text-xs">unfold_more</span>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 cursor-pointer hover:bg-[#363168]/30" scope="col" data-sort="created_at">
+                            <div class="flex items-center gap-1">
+                                Time
+                                <span class="material-symbols-outlined text-xs">unfold_more</span>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 cursor-pointer hover:bg-[#363168]/30" scope="col" data-sort="duration">
+                            <div class="flex items-center gap-1">
+                                Duration
+                                <span class="material-symbols-outlined text-xs">unfold_more</span>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3 cursor-pointer hover:bg-[#363168]/30" scope="col" data-sort="cost">
+                            <div class="flex items-center gap-1">
+                                Cost
+                                <span class="material-symbols-outlined text-xs">unfold_more</span>
+                            </div>
+                        </th>
+                        <th class="px-6 py-3" scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-jobs-tbody">
+                    <tr>
+                        <td colspan="7" class="px-6 py-8 text-center text-gray-400">
+                            <div class="skeleton-box h-4 w-full mb-2"></div>
+                            <div class="skeleton-box h-4 w-full mb-2"></div>
+                            <div class="skeleton-box h-4 w-full"></div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

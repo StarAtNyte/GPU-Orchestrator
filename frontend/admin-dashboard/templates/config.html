@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration - GPU Orchestrator Admin{% endblock %}
+
+{% block content %}
+<header>
+    <p class="text-white text-4xl font-black leading-tight tracking-[-0.033em]">Configuration</p>
+</header>
+
+<!-- Apps Configuration -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Apps Configuration</h2>
+    <div class="glassmorphism-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-300">
+                <thead class="text-xs text-gray-400 uppercase bg-[#252249]/50">
+                    <tr>
+                        <th class="px-6 py-3">App ID</th>
+                        <th class="px-6 py-3">Name</th>
+                        <th class="px-6 py-3">Type</th>
+                        <th class="px-6 py-3">Queue</th>
+                        <th class="px-6 py-3">GPU VRAM</th>
+                        <th class="px-6 py-3">Frontend URL</th>
+                    </tr>
+                </thead>
+                <tbody id="apps-config-tbody">
+                    <tr>
+                        <td colspan="6" class="px-6 py-8 text-center text-gray-400">
+                            Loading configuration...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- Workers Configuration -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Workers Configuration</h2>
+    <div class="glassmorphism-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-300">
+                <thead class="text-xs text-gray-400 uppercase bg-[#252249]/50">
+                    <tr>
+                        <th class="px-6 py-3">Worker Name</th>
+                        <th class="px-6 py-3">App ID</th>
+                        <th class="px-6 py-3">VRAM Required</th>
+                        <th class="px-6 py-3">Startup Time</th>
+                        <th class="px-6 py-3">Shutdown Time</th>
+                    </tr>
+                </thead>
+                <tbody id="workers-config-tbody">
+                    <tr>
+                        <td colspan="5" class="px-6 py-8 text-center text-gray-400">
+                            Loading configuration...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- System Settings -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">System Settings</h2>
+    <div class="glassmorphism-card rounded-xl p-6">
+        <div id="system-settings" class="space-y-4">
+            <div class="text-center text-gray-400 py-4">
+                Loading settings...
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/config.js"></script>
+{% endblock %}

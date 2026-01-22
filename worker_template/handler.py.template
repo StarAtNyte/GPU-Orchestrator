@@ -1,0 +1,171 @@
+"""
+Handler for {{APP_DISPLAY_NAME}}
+Implements the processing logic for {{APP_ID}}
+"""
+
+import logging
+from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
+
+
+class {{HANDLER_CLASS}}:
+    """Handler for {{APP_ID}} jobs."""
+
+    def __init__(self):
+        """Initialize the handler."""
+        self.model = None
+        self.device = "cuda"  # Will auto-detect in load_model
+        logger.info("{{HANDLER_CLASS}} initialized")
+
+    def load_model(self):
+        """
+        Load the ML model/pipeline.
+        Called once on first job, then cached.
+        """
+        if self.model is not None:
+            logger.info("Model already loaded")
+            return
+
+        logger.info("Loading model for {{APP_ID}}...")
+
+        # TODO: Replace with your actual model loading
+
+        # Example for diffusion models with memory optimization:
+        # import torch
+        # from diffusers import DiffusionPipeline
+        # self.model = DiffusionPipeline.from_pretrained(
+        #     "model-name",
+        #     torch_dtype=torch.bfloat16,  # Use bfloat16 for better memory efficiency
+        #     low_cpu_mem_usage=False,
+        # )
+        # # Enable model CPU offloading to reduce VRAM usage
+        # self.model.enable_model_cpu_offload()
+        # # Enable VAE tiling and slicing for memory optimization
+        # if hasattr(self.model, 'vae'):
+        #     self.model.vae.enable_tiling()
+        #     self.model.vae.enable_slicing()
+
+        # Example for transformers:
+        # from transformers import AutoModelForCausalLM, AutoTokenizer
+        # self.model = AutoModelForCausalLM.from_pretrained(
+        #     "model-name",
+        #     torch_dtype=torch.bfloat16,
+        #     device_map="auto"  # Automatic device placement
+        # )
+        # self.tokenizer = AutoTokenizer.from_pretrained("model-name")
+
+        # Example for vLLM (already memory optimized):
+        # from vllm import LLM, SamplingParams
+        # self.model = LLM(
+        #     model="model-name",
+        #     tensor_parallel_size=1,
+        #     gpu_memory_utilization=0.9
+        # )
+
+        logger.info("Model loaded successfully")
+
+    def process(self, job_id: str, params: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Process a job request.
+
+        Args:
+            job_id: Unique job identifier
+            params: Dictionary of job parameters (all strings from protobuf)
+
+        Returns:
+            Dict with keys:
+                - success (bool): Whether processing succeeded
+                - output (Any): Result data if successful
+                - error (str): Error message if failed
+        """
+        try:
+            # Load model if not already loaded
+            self.load_model()
+
+            # Extract and validate parameters
+            # TODO: Update these based on your app's parameters
+            input_data = params.get("input")
+            if not input_data:
+                return {
+                    "success": False,
+                    "error": "Missing required parameter: input"
+                }
+
+            # Optional parameters with defaults
+            # example_param = params.get("example_param", "default_value")
+            # numeric_param = int(params.get("numeric_param", "100"))
+            # float_param = float(params.get("float_param", "0.5"))
+
+            logger.info(f"Processing job {job_id}")
+            logger.info(f"Input: {input_data[:100]}...")  # Log first 100 chars
+
+            # Clear CUDA cache before generation (if using PyTorch)
+            # import torch
+            # torch.cuda.empty_cache()
+
+            # TODO: Replace with your actual processing logic
+            # Example for image generation with memory cleanup:
+            # import torch, gc
+            # try:
+            #     image = self.model(
+            #         prompt=input_data,
+            #         num_inference_steps=numeric_param,
+            #         guidance_scale=float_param
+            #     ).images[0]
+            # finally:
+            #     # Aggressively free CUDA memory after generation
+            #     torch.cuda.empty_cache()
+            #     torch.cuda.synchronize()
+            #     gc.collect()
+            #
+            # # Save or encode result
+            # output_path = f"/app/outputs/{job_id}.png"
+            # image.save(output_path)
+            # result = {"image_path": output_path}
+            #
+            # # Or encode as base64 for direct return:
+            # import base64
+            # from io import BytesIO
+            # buffered = BytesIO()
+            # image.save(buffered, format="PNG")
+            # image_b64 = base64.b64encode(buffered.getvalue()).decode()
+            # result = {"image_base64": image_b64}
+
+            # Example for text generation:
+            # outputs = self.model.generate(
+            #     input_data,
+            #     max_tokens=numeric_param,
+            #     temperature=float_param
+            # )
+            # result = {"text": outputs[0].text}
+
+            # Placeholder result
+            result = {
+                "processed": True,
+                "input_received": input_data,
+                "message": "TODO: Implement actual processing logic"
+            }
+
+            # Return success
+            return {
+                "success": True,
+                "output": result
+            }
+
+        except Exception as e:
+            logger.error(f"Error in handler for job {job_id}: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"Processing failed: {str(e)}"
+            }
+
+    def cleanup(self):
+        """
+        Cleanup resources (optional).
+        Called when worker shuts down.
+        """
+        if self.model is not None:
+            logger.info("Cleaning up model resources...")
+            # TODO: Add any cleanup logic
+            # self.model = None

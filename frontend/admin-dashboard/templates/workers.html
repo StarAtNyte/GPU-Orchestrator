@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Workers - GPU Orchestrator Admin{% endblock %}
+
+{% block content %}
+<header>
+    <p class="text-white text-4xl font-black leading-tight tracking-[-0.033em]">Worker Management</p>
+</header>
+
+<!-- Active Worker Card -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Active Worker</h2>
+    <div id="active-worker-card" class="rounded-xl p-6 border-2 border-[#6366f1] glassmorphism-card">
+        <div class="text-center text-gray-400 py-8">
+            <span class="material-symbols-outlined text-4xl mb-2">hourglass_empty</span>
+            <p>Loading worker status...</p>
+        </div>
+    </div>
+</section>
+
+<!-- Inactive Workers -->
+<section class="space-y-4">
+    <h2 class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-2">Available Workers</h2>
+    <div id="inactive-workers-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="text-center text-gray-400 py-8 col-span-full">
+            <span class="material-symbols-outlined text-4xl mb-2">hourglass_empty</span>
+            <p>Loading workers...</p>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/workers.js"></script>
+{% endblock %}
