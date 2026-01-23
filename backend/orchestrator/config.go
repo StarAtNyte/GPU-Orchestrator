@@ -19,16 +19,19 @@ type AppParameter struct {
 
 // AppConfig represents a single app configuration
 type AppConfig struct {
-	ID              string         `yaml:"id"`
-	Name            string         `yaml:"name"`
-	Type            string         `yaml:"type"` // "local" or "modal"
-	Queue           string         `yaml:"queue"`
-	Endpoint        string         `yaml:"endpoint"`
-	Description     string         `yaml:"description"`
-	GPUVramGB       int            `yaml:"gpu_vram_gb"`
-	DockerImage     string         `yaml:"docker_image"`
-	TimeoutSeconds  int            `yaml:"timeout_seconds"`
-	Parameters      []AppParameter `yaml:"parameters"`
+	ID                    string         `yaml:"id"`
+	Name                  string         `yaml:"name"`
+	Type                  string         `yaml:"type"` // "local" or "modal"
+	Queue                 string         `yaml:"queue"`
+	Endpoint              string         `yaml:"endpoint"`
+	Description           string         `yaml:"description"`
+	GPUVramGB             int            `yaml:"gpu_vram_gb"`
+	DockerImage           string         `yaml:"docker_image"`
+	ContainerName         string         `yaml:"container_name"`
+	IdleTimeoutSeconds    int            `yaml:"idle_timeout_seconds"`
+	StartupTimeoutSeconds int            `yaml:"startup_timeout_seconds"`
+	TimeoutSeconds        int            `yaml:"timeout_seconds"`
+	Parameters            []AppParameter `yaml:"parameters"`
 }
 
 // AppRegistry holds all app configurations

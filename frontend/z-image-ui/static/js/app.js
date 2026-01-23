@@ -188,9 +188,22 @@ class ZImageUI {
     async handleSubmit(e) {
         e.preventDefault();
 
+        // Check for username
+        let username = localStorage.getItem('gpu_orchestrator_username');
+        if (!username) {
+            username = prompt('Please enter your username:');
+            if (!username || username.trim() === '') {
+                alert('Username is required to submit jobs');
+                return;
+            }
+            username = username.trim();
+            localStorage.setItem('gpu_orchestrator_username', username);
+        }
+
         const formData = new FormData(this.form);
         const data = {
             prompt: formData.get('prompt'),
+            username: username,  // Include username
             resolution: formData.get('resolution'),
             steps: 9,
             shift: 3.0,
@@ -218,7 +231,7 @@ class ZImageUI {
                 this.currentJobId = result.job_id;
                 this.currentSeed = result.seed;
                 this.jobIdDisplay.textContent = `Job ID: ${result.job_id}`;
-                this.loadingText.textContent = 'QUEUED...';
+                this.loadingText.textContent = 'QUEUED - You can close this page, check /history for results';
                 this.startPolling();
             } else {
                 alert('Failed to submit job: ' + (result.error || 'Unknown error'));

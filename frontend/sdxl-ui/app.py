@@ -31,6 +31,7 @@ class GenerateRequest(BaseModel):
     num_inference_steps: int = 50
     guidance_scale: float = 7.5
     seed: Optional[int] = None
+    username: str = "anonymous"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -93,20 +94,12 @@ async def generate(request: GenerateRequest):
         
         health_data = health_response.json()
         
-        # If GPU is not available, queue but let user know
-        if not health_data.get("is_available", False):
-            return {
-                "success": True,
-                "job_queued": True,
-                "gpu_status": health_data,
-                "message": "GPU is busy. Job has been queued and will run when GPU is available."
-            }
-        
-        # Step 2: Submit to orchestrator
+        # Step 2: Submit to orchestrator (always submit - orchestrator handles queueing)
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
+                "username": request.username,
                 "params": {
                     "prompt": request.prompt,
                     "negative_prompt": request.negative_prompt or "",

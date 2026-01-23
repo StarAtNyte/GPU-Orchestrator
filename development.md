@@ -6,11 +6,14 @@ Full end-to-end development and testing workflow for backend (Ubuntu GPU PC) + f
 
 ```
 ┌──────────────────────┐
-│  WINDOWS LAPTOP      │
-│  (Development)       │
+│  FRONTEND SERVER     │
+│  (Linux/Windows)     │
 │                      │
-│ Frontend :7861       │
-│ - SDXL UI            │
+│ Main Hub :8080       │
+│ SDXL UI :7861        │
+│ Z-Image UI :7862     │
+│ Qwen UI :7863        │
+│ Admin UI :8000       │
 │ - Polls GPU status   │
 │ - Submits jobs       │
 └──────────┬───────────┘
@@ -22,11 +25,11 @@ Full end-to-end development and testing workflow for backend (Ubuntu GPU PC) + f
 │  UBUNTU GPU PC       │
 │  (192.168.50.28)     │
 │                      │
-│ Backend :8080        │
+│ Backend :9090        │
 │ - Orchestrator       │
 │ - SDXL Worker        │
 │ - Z-Image Worker     │
-│ - Whisper Worker     │
+│ - Qwen Worker        │
 │ - PostgreSQL         │
 │ - Redis              │
 │ - etcd               │
@@ -100,14 +103,14 @@ docker-compose logs orchestrator
 [INFO] Connected to PostgreSQL
 [INFO] Connected to Redis
 [INFO] Connected to etcd
-[INFO] Orchestrator running on :8080
+[INFO] Orchestrator running on :8080 (internal, exposed as :9090 externally)
 ```
 
 ### Step 4: Test Orchestrator Endpoints
 
 ```bash
 # Check GPU health (main endpoint for polling)
-curl http://localhost:8080/health/gpu
+curl http://localhost:9090/health/gpu
 
 # Expected response:
 # {
@@ -121,7 +124,7 @@ curl http://localhost:8080/health/gpu
 # }
 
 # Check worker registration
-curl http://localhost:8080/workers
+curl http://localhost:9090/workers
 
 # Expected response:
 # {
@@ -133,15 +136,15 @@ curl http://localhost:8080/workers
 ### Step 5: Start GPU Workers
 
 ```bash
-# Start all workers
-docker-compose up -d sdxl-worker z-image-worker whisper-worker
+# Start all workers (uncomment them in docker-compose.yml first)
+docker-compose up -d sdxl-worker z-image-worker qwen-worker
 
 # Wait for registration
 sleep 10
 docker-compose ps
 
 # Verify workers registered
-curl http://localhost:8080/workers
+curl http://localhost:9090/workers
 
 # Expected response:
 # {
@@ -149,7 +152,7 @@ curl http://localhost:8080/workers
 #   "workers": [
 #     {"worker_id": "sdxl-worker", "status": "healthy"},
 #     {"worker_id": "z-image-worker", "status": "healthy"},
-#     {"worker_id": "whisper-worker", "status": "healthy"}
+#     {"worker_id": "qwen-worker", "status": "healthy"}
 #   ]
 # }
 ```
@@ -159,10 +162,10 @@ curl http://localhost:8080/workers
 ```bash
 # Full health check
 echo "=== GPU Health ===" && \
-  curl -s http://localhost:8080/health/gpu | jq . && \
+  curl -s http://localhost:9090/health/gpu | jq . && \
   echo "" && \
   echo "=== Workers ===" && \
-  curl -s http://localhost:8080/workers | jq .
+  curl -s http://localhost:9090/workers | jq .
 ```
 
 ---
@@ -192,7 +195,7 @@ cd frontend
 
 **For native Python:**
 ```powershell
-$env:ORCHESTRATOR_URL = "http://192.168.50.28:8080"
+$env:ORCHESTRATOR_URL = "http://192.168.50.28:9090"
 ```
 
 **For Docker:**
@@ -200,7 +203,7 @@ Edit `frontend\docker-compose.yml`:
 ```yaml
 sdxl-ui:
   environment:
-    - ORCHESTRATOR_URL=http://192.168.50.28:8080
+    - ORCHESTRATOR_URL=http://192.168.50.28:9090
 ```
 
 ### Step 3: Start Frontend Services
@@ -208,9 +211,9 @@ sdxl-ui:
 **Python (recommended for single dev UI):**
 ```powershell
 cd frontend\sdxl-ui
-$env:ORCHESTRATOR_URL = "http://192.168.50.28:8080"
+$env:ORCHESTRATOR_URL = "http://192.168.50.28:9090"
 python app.py
-# :7861
+# Runs on :7861
 ```
 
 **Docker (all services at once):**
@@ -238,6 +241,7 @@ You should see:
 - Or access directly:
   - **SDXL UI**: http://localhost:7861
   - **Z-Image UI**: http://localhost:7862
+  - **Qwen UI**: http://localhost:7863
   - **Admin Dashboard**: http://localhost:8000
 
 ---
@@ -247,8 +251,8 @@ You should see:
 ### Test 1: GPU Polling Works
 
 ```powershell
-# Check GPU health directly
-curl http://192.168.50.28:8080/health/gpu
+# Check GPU health directly from backend
+curl http://192.168.50.28:9090/health/gpu
 
 # Check through frontend (proxy)
 curl http://localhost:7861/api/gpu/health
@@ -294,7 +298,7 @@ echo "GPU Available: $($jobResponse.gpu_available)"
 ```powershell
 # Watch GPU status change in real-time
 while($true) {
-  curl -s http://192.168.50.28:8080/health/gpu | jq '.is_available, .utilization_pct'
+  curl -s http://192.168.50.28:9090/health/gpu | jq '.is_available, .utilization_pct'
   Start-Sleep -Seconds 1
 }
 ```
@@ -360,7 +364,7 @@ docker-compose logs -f postgres
 
 ```bash
 # GPU metrics (Ubuntu terminal)
-watch -n 1 'curl -s http://localhost:8080/health/gpu | jq .'
+watch -n 1 'curl -s http://localhost:9090/health/gpu | jq .'
 
 # Or with nvidia-smi
 nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv --loop-ms=1000
@@ -417,18 +421,18 @@ curl http://localhost:7861/api/gpu/health
 # Test connection from laptop to Ubuntu
 ping 192.168.50.28  # Should respond
 
-# Test port 8080
-Test-NetConnection -ComputerName 192.168.50.28 -Port 8080  # Should succeed
+# Test port 9090
+Test-NetConnection -ComputerName 192.168.50.28 -Port 9090  # Should succeed
 
 # Test endpoint directly
-curl http://192.168.50.28:8080/health/gpu  # Should return JSON
+curl http://192.168.50.28:9090/health/gpu  # Should return JSON
 ```
 
 **Solutions:**
 1. Check Ubuntu firewall:
    ```bash
    sudo ufw status
-   sudo ufw allow 8080/tcp
+   sudo ufw allow 9090/tcp
    ```
 
 2. Check orchestrator is running:
@@ -437,10 +441,13 @@ curl http://192.168.50.28:8080/health/gpu  # Should return JSON
    docker-compose logs orchestrator  # Check for errors
    ```
 
-3. Wrong IP in docker-compose.yml:
+3. Wrong IP in frontend docker-compose.yml:
    ```bash
-   # Ubuntu IP on Windows:
-   ipconfig  # Look for IPv4 Address: 192.168.50.x
+   # Get Ubuntu IP:
+   ip addr show | grep "inet " | grep -v 127.0.0.1
+
+   # Update frontend/docker-compose.yml with correct IP:port
+   # ORCHESTRATOR_URL=http://YOUR_UBUNTU_IP:9090
    ```
 
 ### Issue: Job Stuck in QUEUED
@@ -609,9 +616,9 @@ docker-compose logs -f
 docker-compose down
 
 # Test endpoints
-curl http://localhost:8080/health/gpu
-curl http://localhost:8080/workers
-curl http://localhost:8080/submit -X POST -H "Content-Type: application/json" -d '{"app_id":"sdxl-image-gen","params":{"prompt":"test"}}'
+curl http://localhost:9090/health/gpu
+curl http://localhost:9090/workers
+curl http://localhost:9090/submit -X POST -H "Content-Type: application/json" -d '{"app_id":"sdxl-image-gen","params":{"prompt":"test"}}'
 
 # Database
 docker-compose exec postgres psql -U orchestrator -d gpu_orchestrator
@@ -622,7 +629,7 @@ docker-compose exec postgres psql -U orchestrator -d gpu_orchestrator
 ```powershell
 # Start frontend (Python)
 cd frontend\sdxl-ui
-$env:ORCHESTRATOR_URL="http://192.168.50.28:8080"
+$env:ORCHESTRATOR_URL="http://192.168.50.28:9090"
 python app.py
 
 # Test endpoints
@@ -640,8 +647,8 @@ curl -X POST http://localhost:7861/api/generate -H "Content-Type: application/js
 
 ✅ **Backend is working if:**
 - All services running: `docker-compose ps` shows all "Up"
-- GPU endpoint responds: `curl http://localhost:8080/health/gpu` returns JSON
-- Workers registered: `curl http://localhost:8080/workers` shows 3+ workers
+- GPU endpoint responds: `curl http://localhost:9090/health/gpu` returns JSON
+- Workers registered: `curl http://localhost:9090/workers` shows 3+ workers
 - Jobs execute: GPU utilization changes during processing
 
 ✅ **Frontend is working if:**
@@ -690,16 +697,19 @@ Q: How do I change the GPU polling interval?
 A: Edit `frontend/sdxl-ui/static/js/app.js` line ~178, change `3000` to desired ms.
 
 Q: How do I add a new worker model?
-A: Copy `worker/sdxl-image-gen_worker/` to `worker/new-model_worker/`, edit `handler.py`, add to `docker-compose.yml`.
+A: Copy `worker/sdxl_worker/` to `worker/new-model_worker/`, edit handler, update `config/apps.yaml`, uncomment in `docker-compose.yml`.
 
 Q: How do I increase GPU memory limit?
 A: Edit `docker-compose.yml`, add under `deploy.resources.reservations.devices[0]`: `memory: "22G"`
 
 Q: How do I debug a stuck job?
-A: Check `docker-compose logs sdxl-worker`, check `nvidia-smi`, query PostgreSQL for job details.
+A: Check `docker-compose logs <worker-name>`, check `nvidia-smi`, query PostgreSQL for job details.
 
 Q: How do I reset the database?
 A: `docker-compose down -v` (removes volumes), then `docker-compose up -d` (recreates DB).
+
+Q: What port does the orchestrator run on?
+A: Internal: 8080, External: 9090. Always use 9090 when connecting from frontend or other machines.
 
 ---
 

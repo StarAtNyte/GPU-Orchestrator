@@ -12,7 +12,7 @@ services:
     ports:
       - "8080:8888"
     environment:
-      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+      - ORCHESTRATOR_URL=http://172.17.0.1:9090
     networks:
       - frontend-network
     restart: unless-stopped
@@ -30,7 +30,7 @@ services:
     ports:
       - "7861:7861"
     environment:
-      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+      - ORCHESTRATOR_URL=http://172.17.0.1:9090
     networks:
       - frontend-network
     restart: unless-stopped
@@ -49,7 +49,7 @@ services:
     ports:
       - "7862:7862"
     environment:
-      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+      - ORCHESTRATOR_URL=http://172.17.0.1:9090
     networks:
       - frontend-network
     restart: unless-stopped
@@ -68,7 +68,7 @@ services:
     ports:
       - "7863:7863"
     environment:
-      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+      - ORCHESTRATOR_URL=http://172.17.0.1:9090
     networks:
       - frontend-network
     restart: unless-stopped
@@ -87,7 +87,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ORCHESTRATOR_URL=http://113.199.192.32:8080
+      - ORCHESTRATOR_URL=http://172.17.0.1:9090
     networks:
       - frontend-network
     restart: unless-stopped

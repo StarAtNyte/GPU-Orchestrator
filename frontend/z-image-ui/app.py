@@ -85,6 +85,7 @@ EXAMPLE_PROMPTS = [
 
 class GenerateRequest(BaseModel):
     prompt: str
+    username: str  # Add username field
     resolution: str = "1024x1024"
     seed: int = 42
     steps: int = 9
@@ -133,6 +134,7 @@ async def generate(request: GenerateRequest):
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
+                "username": request.username,  # Include username
                 "params": {
                     "prompt": request.prompt,
                     "resolution": resolution,
@@ -210,4 +212,4 @@ async def get_workers():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7861)
+    uvicorn.run(app, host="0.0.0.0", port=7862)

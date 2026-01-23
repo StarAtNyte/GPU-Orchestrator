@@ -201,19 +201,31 @@ class SDXLImageUI {
             const response = await fetch('/api/gpu/health');
             const data = await response.json();
             this.gpuStatus = data;
-            
+
             if (data.status === 'ok') {
+                const jobs = data.active_jobs || 0;
+                const utilization = parseFloat(data.utilization_pct) || 0;
+
                 if (data.is_available) {
                     // GPU is free
                     this.gpuStatusIndicator.style.background = '#10B981';
                     this.gpuStatusIndicator.style.animation = 'none';
                     this.gpuStatusText.textContent = `GPU Ready • ${data.free_vram_gb}GB free`;
-                } else {
-                    // GPU is busy
-                    this.gpuStatusIndicator.style.background = '#EF4444';
+                } else if (jobs > 0) {
+                    // GPU is processing jobs
+                    this.gpuStatusIndicator.style.background = '#F97316';
                     this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
-                    const jobs = data.active_jobs || 0;
                     this.gpuStatusText.textContent = `GPU Busy • ${jobs} job${jobs !== 1 ? 's' : ''} processing`;
+                } else if (utilization > 30) {
+                    // High utilization, no active jobs - reserved for something
+                    this.gpuStatusIndicator.style.background = '#FBBF24';
+                    this.gpuStatusIndicator.style.animation = 'none';
+                    this.gpuStatusText.textContent = `GPU Reserved • ${utilization.toFixed(1)}% utilized`;
+                } else {
+                    // Low background activity but no active jobs - idle
+                    this.gpuStatusIndicator.style.background = '#10B981';
+                    this.gpuStatusIndicator.style.animation = 'none';
+                    this.gpuStatusText.textContent = `GPU Idle • ${data.free_vram_gb}GB free`;
                 }
             } else {
                 // Error checking GPU
@@ -238,6 +250,18 @@ class SDXLImageUI {
         const width = parseInt(resolution[0]);
         const height = parseInt(resolution[1]);
 
+        // Check for username
+        let username = localStorage.getItem('gpu_orchestrator_username');
+        if (!username) {
+            username = prompt('Please enter your username:');
+            if (!username || username.trim() === '') {
+                alert('Username is required to submit jobs');
+                return;
+            }
+            username = username.trim();
+            localStorage.setItem('gpu_orchestrator_username', username);
+        }
+
         const data = {
             prompt: formData.get('prompt'),
             negative_prompt: formData.get('negative_prompt') || '',
@@ -245,7 +269,8 @@ class SDXLImageUI {
             height: height,
             num_inference_steps: 50,
             guidance_scale: 7.5,
-            seed: null
+            seed: null,
+            username: username
         };
 
         // Show loading state

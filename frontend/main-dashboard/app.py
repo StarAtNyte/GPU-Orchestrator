@@ -26,6 +26,7 @@ FRONTEND_SERVICES = {
     "sdxl": {
         "name": "SDXL Image Generator",
         "url": "http://localhost:7861",
+        "container_name": "sdxl-ui",
         "port": 7861,
         "icon": "🎨",
         "description": "Generate images with Stable Diffusion XL",
@@ -34,6 +35,7 @@ FRONTEND_SERVICES = {
     "z-image": {
         "name": "Z-Image Generator",
         "url": "http://localhost:7862",
+        "container_name": "z-image-ui",
         "port": 7862,
         "icon": "🖼️",
         "description": "Generate images with Z-Image model",
@@ -42,6 +44,7 @@ FRONTEND_SERVICES = {
     "qwen": {
         "name": "Qwen Image 2512 Fast",
         "url": "http://localhost:7863",
+        "container_name": "qwen-ui",
         "port": 7863,
         "icon": "⚡",
         "description": "Ultra-fast image generation with Qwen",
@@ -50,6 +53,7 @@ FRONTEND_SERVICES = {
     "whisper": {
         "name": "Whisper Speech-to-Text",
         "url": "http://localhost:7864",
+        "container_name": "whisper-ui",
         "port": 7864,
         "icon": "🎤",
         "description": "Convert speech to text with Whisper",
@@ -58,6 +62,7 @@ FRONTEND_SERVICES = {
     "admin": {
         "name": "Admin Dashboard",
         "url": "http://localhost:8000",
+        "container_name": "admin-dashboard",
         "port": 8000,
         "icon": "⚙️",
         "description": "Monitor jobs, workers, and system metrics",
@@ -70,6 +75,12 @@ FRONTEND_SERVICES = {
 async def home(request: Request):
     """Serve the main hub."""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/history", response_class=HTMLResponse)
+async def history_page(request: Request):
+    """Serve the user history page."""
+    return templates.TemplateResponse("history.html", {"request": request})
 
 
 @app.get("/health")
@@ -91,25 +102,26 @@ async def health():
 async def get_services():
     """Get all available services and their status."""
     services = []
-    
+
     for service_key, service_info in FRONTEND_SERVICES.items():
         try:
-            # Try to reach service health endpoint
-            response = requests.get(f"{service_info['url']}/health", timeout=3)
+            # Health check from inside container - use container name on Docker network
+            health_url = f"http://{service_info['container_name']}:{service_info['port']}/health"
+            response = requests.get(health_url, timeout=3)
             status = "online" if response.status_code == 200 else "offline"
-        except:
+        except Exception as e:
             status = "offline"
-        
+
         services.append({
             "key": service_key,
             "name": service_info["name"],
-            "url": service_info["url"],
+            "url": service_info["url"],  # Keep localhost URL for browser
             "icon": service_info["icon"],
             "description": service_info["description"],
             "status": status,
             "app_id": service_info["app_id"]
         })
-    
+
     return {"services": services}
 
 
@@ -161,6 +173,51 @@ async def get_apps():
             return {"apps": {}}
     except:
         return {"apps": {}}
+
+
+@app.get("/api/user/jobs")
+async def get_user_jobs(username: str, app_id: Optional[str] = None, status: Optional[str] = None):
+    """Get user's job history from orchestrator."""
+    try:
+        params = {"username": username}
+        if app_id:
+            params["app_id"] = app_id
+        if status:
+            params["status"] = status
+
+        response = requests.get(
+            f"{ORCHESTRATOR_URL}/user/jobs",
+            params=params,
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"username": username, "count": 0, "jobs": []}
+    except Exception as e:
+        return {
+            "username": username,
+            "count": 0,
+            "jobs": [],
+            "error": str(e)
+        }
+
+
+@app.get("/api/user/jobs/{job_id}")
+async def get_user_job_details(job_id: str, username: str):
+    """Get detailed job information from orchestrator."""
+    try:
+        response = requests.get(
+            f"{ORCHESTRATOR_URL}/user/jobs/{job_id}",
+            params={"username": username},
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Job not found")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

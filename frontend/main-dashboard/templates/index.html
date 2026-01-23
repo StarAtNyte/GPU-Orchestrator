@@ -1,83 +1,171 @@
 <!DOCTYPE html>
-<html lang="en">
+
+<html class="dark" lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPU Orchestrator Hub</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>GPU Orchestrator Hub Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#256af4",
+                        "background-light": "#f5f6f8",
+                        "background-dark": "#101622",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        body {
+            font-family: "Space Grotesk", sans-serif;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        .card-hover:hover {
+            border-color: #256af4;
+            box-shadow: 0 0 15px rgba(37, 106, 244, 0.2);
+        }
+    </style>
 </head>
-<body>
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="logo">🚀 GPU Orchestrator Hub</div>
-            <div class="status-group">
-                <div id="gpuStatusBadge" class="status-badge">
-                    <span id="gpuStatusIndicator" class="indicator"></span>
-                    <span id="gpuStatusText">Checking GPU...</span>
+
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen flex flex-col">
+    <!-- TopNavBar -->
+    <header
+        class="border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-background-dark/50 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="text-primary">
+                    <span class="material-symbols-outlined text-3xl">developer_board</span>
                 </div>
-                <div id="statusBadge" class="status-badge">
-                    <span id="statusText">Connecting...</span>
+                <h1 class="text-xl font-bold tracking-tight">GPU Orchestrator</h1>
+            </div>
+            <div class="flex items-center gap-6">
+                <a href="/history" class="flex items-center gap-2 text-slate-400 hover:text-primary transition-colors">
+                    <span class="material-symbols-outlined">history</span>
+                    <span class="text-sm font-medium">History</span>
+                </a>
+                <div id="systemStatusBadge"
+                    class="flex items-center gap-2 bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20">
+                    <span class="relative flex h-2 w-2">
+                        <span
+                            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                    </span>
+                    <span id="systemStatusText" class="text-yellow-500 text-xs font-bold uppercase tracking-wider">System Status:
+                        Connecting</span>
+                </div>
+                <div
+                    class="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden border border-slate-300 dark:border-slate-600">
+                    <span class="material-symbols-outlined text-slate-500 dark:text-slate-400 flex items-center justify-center h-full w-full">account_circle</span>
                 </div>
             </div>
         </div>
-    </nav>
+    </header>
 
-    <main class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>GPU Services Hub</h1>
-            <p class="subtitle">Access all GPU orchestration services</p>
+    <main class="flex-grow px-6 py-12">
+        <!-- PageHeading -->
+        <div class="text-center mb-12 max-w-2xl mx-auto">
+            <h2 class="text-4xl md:text-5xl font-black mb-4 tracking-tight">Hub Dashboard</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-lg">Manage your GPU generation and processing tasks
+                from a centralized interface.</p>
         </div>
 
         <!-- GPU Status Card -->
-        <div id="gpuCard" class="gpu-card">
-            <div class="gpu-header">
-                <div class="gpu-icon">🖥️</div>
-                <div class="gpu-info">
-                    <h3>GPU Status</h3>
-                    <p id="gpuDetail">Connecting to orchestrator...</p>
+        <div class="max-w-7xl mx-auto mb-12">
+            <div id="gpuCard"
+                class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-8">
+                <div class="flex items-center gap-4 mb-6">
+                    <div class="p-3 rounded-xl bg-primary/10 text-primary">
+                        <span class="material-symbols-outlined text-4xl">memory</span>
+                    </div>
+                    <div>
+                        <h3 class="text-2xl font-bold mb-1">GPU Status</h3>
+                        <p id="gpuDetail" class="text-slate-500 dark:text-slate-400">Connecting to orchestrator...</p>
+                    </div>
                 </div>
-            </div>
-            <div class="gpu-metrics">
-                <div class="metric">
-                    <span class="label">Free VRAM</span>
-                    <span class="value" id="freeVram">-</span>
-                </div>
-                <div class="metric">
-                    <span class="label">Used VRAM</span>
-                    <span class="value" id="usedVram">-</span>
-                </div>
-                <div class="metric">
-                    <span class="label">Utilization</span>
-                    <span class="value" id="utilization">-</span>
-                </div>
-                <div class="metric">
-                    <span class="label">Active Jobs</span>
-                    <span class="value" id="activeJobs">-</span>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Free VRAM</span>
+                        <span class="text-2xl font-bold text-primary" id="freeVram">-</span>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Used VRAM</span>
+                        <span class="text-2xl font-bold text-primary" id="usedVram">-</span>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Utilization</span>
+                        <span class="text-2xl font-bold text-primary" id="utilization">-</span>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Active Jobs</span>
+                        <span class="text-2xl font-bold text-primary" id="activeJobs">-</span>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Services Grid -->
-        <div class="services-section">
-            <h2>Available Services</h2>
-            <div id="servicesGrid" class="services-grid">
-                <div class="loading">Loading services...</div>
+        <div class="max-w-7xl mx-auto mb-12">
+            <h2 class="text-3xl font-bold mb-6">Available Services</h2>
+            <div id="servicesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="text-center text-slate-400 py-12">Loading services...</div>
             </div>
         </div>
 
         <!-- Workers Status -->
-        <div class="workers-section">
-            <h2>Registered Workers</h2>
-            <div id="workersList" class="workers-list">
-                <div class="loading">Loading workers...</div>
+        <div class="max-w-7xl mx-auto mb-12">
+            <h2 class="text-3xl font-bold mb-6">Registered Workers</h2>
+            <div id="workersList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="text-center text-slate-400 py-12">Loading workers...</div>
             </div>
         </div>
     </main>
 
+    <!-- Footer -->
+    <footer
+        class="mt-auto border-t border-slate-200 dark:border-slate-800 bg-white/30 dark:bg-background-dark/30 backdrop-blur-sm py-8">
+        <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
+            <div class="flex items-center gap-8">
+                <a class="text-slate-400 hover:text-primary text-sm transition-colors" href="#">Documentation</a>
+                <a class="text-slate-400 hover:text-primary text-sm transition-colors" href="http://localhost:8000" target="_blank">Admin Console</a>
+                <a class="text-slate-400 hover:text-primary text-sm transition-colors" href="#">Support</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <a class="p-2 text-slate-400 hover:text-primary transition-colors" href="#">
+                    <span class="material-symbols-outlined">terminal</span>
+                </a>
+                <a class="p-2 text-slate-400 hover:text-primary transition-colors" href="#">
+                    <span class="material-symbols-outlined">monitoring</span>
+                </a>
+                <p class="text-slate-400 text-sm ml-4">© 2025 GPU Orchestrator</p>
+            </div>
+        </div>
+    </footer>
+
     <script src="/static/app.js"></script>
 </body>
+
 </html>

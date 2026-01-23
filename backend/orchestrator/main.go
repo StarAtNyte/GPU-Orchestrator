@@ -30,22 +30,18 @@ var (
 	db          *sql.DB
 	etcdCli     *clientv3.Client
 	ctx         = context.Background()
-	workers     = make(map[string]*WorkerInfo) // In-memory worker registry
-	appRegistry map[string]AppConfig           // App Registry loaded from YAML
+	appRegistry map[string]AppConfig // App Registry loaded from YAML
+	// workers is declared in worker_manager.go
 )
 
 // HTTP Request Payload
 type SubmitRequest struct {
-	AppID  string            `json:"app_id"`
-	Params map[string]string `json:"params"` // Generic map
+	AppID    string            `json:"app_id"`
+	Username string            `json:"username"` // User identifier
+	Params   map[string]string `json:"params"`   // Generic map
 }
 
-// WorkerInfo tracks worker metadata
-type WorkerInfo struct {
-	WorkerID      string
-	LastHeartbeat time.Time
-	Status        string
-}
+// WorkerInfo is defined in worker_manager.go
 
 func main() {
 	// 1. Load App Registry
@@ -97,20 +93,36 @@ func main() {
 	defer etcdCli.Close()
 	log.Println("[INFO] Connected to etcd")
 
-	// 4. Start worker watcher (background goroutine)
-	go watchWorkers()
+	// 4. Initialize worker manager
+	if err := InitWorkerManager(); err != nil {
+		log.Fatalf("[ERROR] Worker manager initialization failed: %v", err)
+	}
+	log.Println("[INFO] Worker manager initialized")
 
-	// 5. Start worker scheduler (background goroutine)
-	go startWorkerScheduler()
+	// 5. Start worker watcher (background goroutine)
+	go watchWorkers()
 
 	// 6. Start job timeout monitor (background goroutine)
 	go monitorJobTimeouts()
 
-	// 7. Start HTTP Server
+	// 7. Start stream monitor (watches for pending jobs)
+	go monitorStreams()
+
+	// 8. Start idle timeout monitor (stops idle workers)
+	go monitorIdleWorkers()
+
+	// 9. Start job completion tracker (updates worker state)
+	go monitorJobCompletions()
+
+	// 10. Start HTTP Server
 	http.HandleFunc("/submit", submitJobHandler)
 	http.HandleFunc("/status/", statusHandler)
 	http.HandleFunc("/workers", workersHandler)
 	http.HandleFunc("/health/gpu", gpuHealthHandler)
+
+	// User history endpoints
+	http.HandleFunc("/user/jobs", userJobsHandler)
+	http.HandleFunc("/user/jobs/", userJobDetailsHandler)
 
 	// Admin API endpoints
 	http.HandleFunc("/admin/jobs", adminJobsHandler)
@@ -143,6 +155,17 @@ func getEnv(key, defaultValue string) string {
 }
 
 func submitJobHandler(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -152,6 +175,12 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	var req SubmitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Validate username
+	if req.Username == "" {
+		http.Error(w, "Username is required", http.StatusBadRequest)
 		return
 	}
 
@@ -167,9 +196,9 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	// Insert job into PostgreSQL (PENDING status)
 	paramsJSON, _ := json.Marshal(req.Params)
 	_, err := db.Exec(`
-		INSERT INTO jobs (id, app_id, status, params, created_at)
-		VALUES ($1, $2, $3, $4, NOW())
-	`, jobID, req.AppID, "PENDING", paramsJSON)
+		INSERT INTO jobs (id, app_id, status, params, username, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+	`, jobID, req.AppID, "PENDING", paramsJSON, req.Username)
 	if err != nil {
 		log.Printf("[ERROR] Failed to insert job into database: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -212,6 +241,28 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 		// Notify scheduler that this queue has pending jobs
 		rdb.SAdd(ctx, "queues:with_jobs", appConfig.Queue)
 
+		// Try to start worker immediately if none exists
+		go func() {
+			worker := GetWorkerForApp(req.AppID)
+			if worker == nil {
+				isAvailable, err := IsGPUAvailable()
+				if err != nil {
+					log.Printf("[SUBMIT] Error checking GPU availability: %v", err)
+					return
+				}
+
+				if isAvailable {
+					log.Printf("[SUBMIT] Starting worker for app %s", req.AppID)
+					_, err := StartWorkerForApp(req.AppID)
+					if err != nil {
+						log.Printf("[SUBMIT] Worker start failed: %v", err)
+					}
+				} else {
+					log.Printf("[SUBMIT] GPU busy, job %s queued", jobID)
+				}
+			}
+		}()
+
 		log.Printf("[INFO] [Local] Job %s queued on %s for %s", jobID, appConfig.Queue, req.AppID)
 
 	} else if appConfig.Type == "modal" {
@@ -249,15 +300,30 @@ func watchWorkers() {
 	if err != nil {
 		log.Printf("[ERROR] Failed to load existing workers from etcd: %v", err)
 	} else {
+		workerMutex.Lock()
 		for _, kv := range resp.Kvs {
 			workerID := string(kv.Key)[len("/workers/"):]
-			workers[workerID] = &WorkerInfo{
-				WorkerID:      workerID,
-				LastHeartbeat: time.Now(),
-				Status:        "ONLINE",
+
+			// Check if worker already exists in our registry (started by us)
+			if existing := workers[workerID]; existing != nil {
+				existing.LastHeartbeat = time.Now()
+				if existing.State == WorkerStateStarting {
+					existing.State = WorkerStateReady
+				}
+				log.Printf("[INFO] Updated existing worker: %s (state: %s)", workerID, existing.State)
+			} else {
+				// External worker (not started by orchestrator)
+				workers[workerID] = &WorkerInfo{
+					WorkerID:         workerID,
+					LastHeartbeat:    time.Now(),
+					State:            WorkerStateReady,
+					LastActivityTime: time.Now(),
+					IdleTimeoutSeconds: 300,
+				}
+				log.Printf("[INFO] Loaded external worker: %s", workerID)
 			}
-			log.Printf("[INFO] Loaded existing worker: %s", workerID)
 		}
+		workerMutex.Unlock()
 		log.Printf("[INFO] Loaded %d existing worker(s) from etcd", len(resp.Kvs))
 	}
 
@@ -266,22 +332,52 @@ func watchWorkers() {
 
 	for watchResp := range watchChan {
 		for _, event := range watchResp.Events {
-			workerID := string(event.Kv.Key)[len("/workers/"):]
+			workerID := strings.TrimPrefix(string(event.Kv.Key), "/workers/")
 
 			switch event.Type {
 			case clientv3.EventTypePut:
-				// Worker registered or sent heartbeat
-				workers[workerID] = &WorkerInfo{
-					WorkerID:      workerID,
-					LastHeartbeat: time.Now(),
-					Status:        "ONLINE",
+				workerMutex.Lock()
+
+				// Parse worker info from etcd value
+				if existing := workers[workerID]; existing != nil {
+					existing.LastHeartbeat = time.Now()
+					if existing.State == WorkerStateStarting {
+						existing.State = WorkerStateReady
+						log.Printf("[ETCD] Worker %s transitioned to READY", workerID)
+					}
+				} else {
+					// Externally started worker
+					workers[workerID] = &WorkerInfo{
+						WorkerID:           workerID,
+						LastHeartbeat:      time.Now(),
+						State:              WorkerStateReady,
+						LastActivityTime:   time.Now(),
+						IdleTimeoutSeconds: 300,
+					}
+					log.Printf("[ETCD] External worker %s registered (state: READY)", workerID)
 				}
-				log.Printf("[INFO] Worker %s is ONLINE", workerID)
+
+				workerMutex.Unlock()
 
 			case clientv3.EventTypeDelete:
-				// Worker lease expired (crashed or stopped)
-				delete(workers, workerID)
-				log.Printf("[WARN] Worker %s went OFFLINE", workerID)
+				workerMutex.Lock()
+
+				workerID := strings.TrimPrefix(string(event.Kv.Key), "/workers/")
+				if existing := workers[workerID]; existing != nil {
+					if existing.State == WorkerStateProcessing {
+						log.Printf("[ETCD] Worker %s crashed during job %s",
+							workerID, existing.CurrentJobID)
+						if existing.CurrentJobID != "" {
+							db.Exec(`UPDATE jobs SET status = 'FAILED',
+								error_log = 'Worker crashed', completed_at = NOW()
+								WHERE id = $1`, existing.CurrentJobID)
+						}
+					}
+					delete(workers, workerID)
+					log.Printf("[ETCD] Worker %s went OFFLINE (previous state: %s)", workerID, existing.State)
+				}
+
+				workerMutex.Unlock()
 			}
 		}
 	}
@@ -289,6 +385,17 @@ func watchWorkers() {
 
 // statusHandler returns job status from PostgreSQL
 func statusHandler(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// Extract job_id from URL path /status/{job_id}
 	jobID := r.URL.Path[len("/status/"):]
 	if jobID == "" {
@@ -354,6 +461,221 @@ func workersHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// userJobsHandler returns all jobs for a specific user
+func userJobsHandler(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get username from query parameter
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Username parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Optional filters
+	appID := r.URL.Query().Get("app_id")
+	status := r.URL.Query().Get("status")
+
+	// Build query
+	query := `
+		SELECT id, app_id, status, created_at, started_at, completed_at, params, output, error_log
+		FROM jobs
+		WHERE username = $1
+	`
+	args := []interface{}{username}
+
+	if appID != "" {
+		query += " AND app_id = $" + fmt.Sprintf("%d", len(args)+1)
+		args = append(args, appID)
+	}
+
+	if status != "" {
+		query += " AND status = $" + fmt.Sprintf("%d", len(args)+1)
+		args = append(args, status)
+	}
+
+	query += " ORDER BY created_at DESC LIMIT 100"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		log.Printf("[ERROR] Failed to query user jobs: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	jobs := []map[string]interface{}{}
+
+	for rows.Next() {
+		var jobID, appID, status string
+		var createdAt, startedAt, completedAt sql.NullTime
+		var params, output, errorLog sql.NullString
+
+		err := rows.Scan(&jobID, &appID, &status, &createdAt, &startedAt, &completedAt, &params, &output, &errorLog)
+		if err != nil {
+			log.Printf("[ERROR] Failed to scan job row: %v", err)
+			continue
+		}
+
+		job := map[string]interface{}{
+			"job_id":  jobID,
+			"app_id":  appID,
+			"status":  status,
+		}
+
+		if createdAt.Valid {
+			job["created_at"] = createdAt.Time.Format(time.RFC3339)
+		}
+		if startedAt.Valid {
+			job["started_at"] = startedAt.Time.Format(time.RFC3339)
+		}
+		if completedAt.Valid {
+			job["completed_at"] = completedAt.Time.Format(time.RFC3339)
+		}
+
+		// Parse params
+		if params.Valid && params.String != "" {
+			var paramsData interface{}
+			if err := json.Unmarshal([]byte(params.String), &paramsData); err == nil {
+				job["params"] = paramsData
+			}
+		}
+
+		// Parse output (only include if completed)
+		if status == "COMPLETED" && output.Valid && output.String != "" {
+			var outputData interface{}
+			if err := json.Unmarshal([]byte(output.String), &outputData); err == nil {
+				job["output"] = outputData
+			}
+		}
+
+		if errorLog.Valid && errorLog.String != "" {
+			job["error_log"] = errorLog.String
+		}
+
+		jobs = append(jobs, job)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"username": username,
+		"count":    len(jobs),
+		"jobs":     jobs,
+	})
+}
+
+// userJobDetailsHandler returns detailed information about a specific job
+func userJobDetailsHandler(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract job_id from URL path /user/jobs/{job_id}
+	jobID := strings.TrimPrefix(r.URL.Path, "/user/jobs/")
+	if jobID == "" {
+		http.Error(w, "Missing job_id", http.StatusBadRequest)
+		return
+	}
+
+	// Get username from query parameter (for authorization)
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Username parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	var status, appID, jobUsername string
+	var createdAt, startedAt, completedAt sql.NullTime
+	var params, output, errorLog sql.NullString
+
+	err := db.QueryRow(`
+		SELECT status, app_id, username, created_at, started_at, completed_at, params, output, error_log
+		FROM jobs
+		WHERE id = $1
+	`, jobID).Scan(&status, &appID, &jobUsername, &createdAt, &startedAt, &completedAt, &params, &output, &errorLog)
+
+	if err == sql.ErrNoRows {
+		http.Error(w, "Job not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		log.Printf("[ERROR] Database error: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Verify the job belongs to the requesting user
+	if jobUsername != username {
+		http.Error(w, "Unauthorized - job does not belong to this user", http.StatusForbidden)
+		return
+	}
+
+	response := map[string]interface{}{
+		"job_id":   jobID,
+		"app_id":   appID,
+		"status":   status,
+		"username": jobUsername,
+	}
+
+	if createdAt.Valid {
+		response["created_at"] = createdAt.Time.Format(time.RFC3339)
+	}
+	if startedAt.Valid {
+		response["started_at"] = startedAt.Time.Format(time.RFC3339)
+	}
+	if completedAt.Valid {
+		response["completed_at"] = completedAt.Time.Format(time.RFC3339)
+	}
+
+	// Parse params
+	if params.Valid && params.String != "" {
+		var paramsData interface{}
+		if err := json.Unmarshal([]byte(params.String), &paramsData); err == nil {
+			response["params"] = paramsData
+		}
+	}
+
+	// Parse output
+	if output.Valid && output.String != "" {
+		var outputData interface{}
+		if err := json.Unmarshal([]byte(output.String), &outputData); err == nil {
+			response["result"] = outputData
+		}
+	}
+
+	if errorLog.Valid && errorLog.String != "" {
+		response["error_log"] = errorLog.String
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // runMigrations runs database migrations
 func runMigrations(db *sql.DB) {
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
@@ -379,312 +701,14 @@ func runMigrations(db *sql.DB) {
 	}
 }
 
-// switchWorker calls the worker manager to switch to the correct worker
-func switchWorker(appID string) error {
-	// Call python worker manager script
-	cmd := exec.Command("python3", "/app/scripts/worker_manager.py", "app", appID)
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		return fmt.Errorf("worker manager error: %s - %v", string(output), err)
-	}
-
-	// Update active worker tracking
-	workerName := getWorkerNameForApp(appID)
-	setCurrentActiveWorker(workerName)
-
-	// Track when worker started (for idle timeout calculation)
-	rdb.Set(ctx, "orchestrator:worker_started_at", time.Now().Format(time.RFC3339), 0)
-
-	log.Printf("[SUCCESS] Worker ready for app: %s", appID)
-	return nil
-}
-
-// startWorkerScheduler runs the worker scheduler loop in background
-func startWorkerScheduler() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("[SCHEDULER] Panic recovered: %v", r)
-		}
-	}()
-
-	log.Println("[SCHEDULER] Starting worker scheduler...")
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	log.Println("[SCHEDULER] Ticker created, entering loop...")
-	for range ticker.C {
-		log.Println("[SCHEDULER] Ticker fired, calling scheduleNextWorker()")
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("[SCHEDULER] Panic in scheduleNextWorker: %v", r)
-				}
-			}()
-			scheduleNextWorker()
-		}()
-	}
-	log.Println("[SCHEDULER] Scheduler loop exited!")
-}
-
-// scheduleNextWorker checks queues and switches workers intelligently
-func scheduleNextWorker() {
-	log.Println("[SCHEDULER] Tick - checking for work...")
-	// 1. Get current active worker
-	currentWorker := getCurrentActiveWorker()
-	log.Printf("[SCHEDULER DEBUG] Current worker: '%s'", currentWorker)
-
-	// 2. If current worker is busy, don't interrupt
-	if currentWorker != "" && isWorkerBusy(currentWorker) {
-		log.Printf("[SCHEDULER DEBUG] Worker %s is busy, skipping", currentWorker)
-		return
-	}
-
-	// 3. Check all queues for pending jobs (priority order)
-	type queueInfo struct {
-		appID      string
-		queue      string
-		length     int64
-		workerName string
-	}
-
-	var queuesWithJobs []queueInfo
-
-	for appID, appConfig := range appRegistry {
-		if appConfig.Type != "local" {
-			continue
-		}
-
-		// Check for PENDING messages in the consumer group
-		// This ensures we only count unprocessed jobs, not acknowledged/stuck messages
-		groupName := appID + "-workers" // Consumer group naming: {app-id}-workers
-
-		pending, err := rdb.XPending(ctx, appConfig.Queue, groupName).Result()
-		if err != nil {
-			// Consumer group might not exist yet, check stream length as fallback
-			queueLength, err := rdb.XLen(ctx, appConfig.Queue).Result()
-			if err != nil {
-				log.Printf("[SCHEDULER] Error checking queue %s: %v", appConfig.Queue, err)
-				continue
-			}
-			// Only act if there are messages in a new queue
-			if queueLength > 0 {
-				workerName := getWorkerNameForApp(appID)
-				queuesWithJobs = append(queuesWithJobs, queueInfo{
-					appID:      appID,
-					queue:      appConfig.Queue,
-					length:     queueLength,
-					workerName: workerName,
-				})
-			}
-			continue
-		}
-
-		// Count ONLY pending (unacknowledged) messages
-		pendingCount := pending.Count
-
-		// ALSO check for messages waiting to be consumed (lag)
-		// Lag means messages are in the stream but haven't been read yet
-		// This happens when no worker is active to consume them
-		totalJobsWaiting := pendingCount
-		if pending.Count == 0 {
-			// Check stream length to find unconsumed messages
-			queueLength, err := rdb.XLen(ctx, appConfig.Queue).Result()
-			if err == nil && queueLength > 0 {
-				// Get consumer group info to check lag
-				groupInfo, err := rdb.XInfoGroups(ctx, appConfig.Queue).Result()
-				if err == nil && len(groupInfo) > 0 {
-					for _, group := range groupInfo {
-						if group.Name == groupName {
-							totalJobsWaiting = group.Lag
-							break
-						}
-					}
-				}
-			}
-		}
-
-		if totalJobsWaiting > 0 {
-			workerName := getWorkerNameForApp(appID)
-			queuesWithJobs = append(queuesWithJobs, queueInfo{
-				appID:      appID,
-				queue:      appConfig.Queue,
-				length:     totalJobsWaiting,
-				workerName: workerName,
-			})
-		} else {
-			// No pending jobs, remove from set
-			rdb.SRem(ctx, "queues:with_jobs", appConfig.Queue)
-		}
-	}
-
-	// 4. If we found jobs in queues
-	if len(queuesWithJobs) > 0 {
-		// Pick the first queue with jobs (could add priority logic here)
-		selected := queuesWithJobs[0]
-
-		// Only switch if it's a different worker
-		if selected.workerName != currentWorker {
-			log.Printf("[SCHEDULER] Switching to %s for app %s (queue: %s, pending: %d jobs)",
-				selected.workerName, selected.appID, selected.queue, selected.length)
-
-			if err := switchWorker(selected.appID); err != nil {
-				log.Printf("[SCHEDULER] Failed to switch worker: %v", err)
-			}
-		}
-		return
-	}
-
-	// 5. No jobs in any queue - handle idle timeout
-	if currentWorker != "" {
-		idleTime := getWorkerIdleTime(currentWorker)
-		idleTimeout := 300 * time.Second // 5 minutes from config
-
-		log.Printf("[SCHEDULER DEBUG] Worker %s idle time: %v (timeout: %v)", currentWorker, idleTime, idleTimeout)
-
-		if idleTime > idleTimeout {
-			log.Printf("[SCHEDULER] Stopping idle worker: %s (idle for %v)", currentWorker, idleTime)
-			if err := stopAllWorkers(); err != nil {
-				log.Printf("[SCHEDULER] Failed to stop idle worker: %v", err)
-			}
-		}
-	}
-}
-
-// getCurrentActiveWorker returns the currently active worker name
-func getCurrentActiveWorker() string {
-	// First check Redis
-	val, err := rdb.Get(ctx, "orchestrator:active_worker").Result()
-	if err == nil && val != "" {
-		return val
-	}
-
-	// Fallback: check worker_manager state file (in case orchestrator restarted)
-	cmd := exec.Command("cat", "/tmp/gpu_orchestrator_active_worker.txt")
-	output, err := cmd.CombinedOutput()
-	if err == nil && len(output) > 0 {
-		active := strings.TrimSpace(string(output))
-		if active != "" {
-			// Sync Redis state
-			setCurrentActiveWorker(active)
-
-			// Also sync worker_started_at if not set
-			_, err := rdb.Get(ctx, "orchestrator:worker_started_at").Result()
-			if err != nil {
-				// Try to get container start time from Docker
-				containerName := active + "-1" // Assumes naming convention
-				inspectCmd := exec.Command("docker", "inspect", containerName, "--format={{.State.StartedAt}}")
-				inspectOut, err := inspectCmd.CombinedOutput()
-				if err == nil && len(inspectOut) > 0 {
-					startedAtStr := strings.TrimSpace(string(inspectOut))
-					// Parse and convert to RFC3339
-					startTime, err := time.Parse(time.RFC3339, startedAtStr)
-					if err == nil {
-						rdb.Set(ctx, "orchestrator:worker_started_at", startTime.Format(time.RFC3339), 0)
-						log.Printf("[SCHEDULER] Synced worker_started_at for %s: %s", active, startTime.Format(time.RFC3339))
-					}
-				}
-			}
-
-			return active
-		}
-	}
-
-	return ""
-}
-
-// setCurrentActiveWorker sets the active worker name
-func setCurrentActiveWorker(workerName string) {
-	if workerName == "" {
-		rdb.Del(ctx, "orchestrator:active_worker")
-		rdb.Del(ctx, "orchestrator:worker_started_at")
-	} else {
-		rdb.Set(ctx, "orchestrator:active_worker", workerName, 0)
-	}
-}
-
-// isWorkerBusy checks if worker is currently processing a job
-func isWorkerBusy(workerName string) bool {
-	// Check if worker has recently marked itself as active
-	key := fmt.Sprintf("worker:%s:last_active", workerName)
-	val, err := rdb.Get(ctx, key).Result()
-	if err != nil {
-		// Key doesn't exist or expired = worker is idle
-		return false
-	}
-
-	// Parse the timestamp
-	lastActiveTime, err := time.Parse(time.RFC3339, val)
-	if err != nil {
-		return false
-	}
-
-	// Consider busy if active within last 60 seconds
-	return time.Since(lastActiveTime) < 60*time.Second
-}
-
-// getWorkerIdleTime returns how long the worker has been idle
-func getWorkerIdleTime(workerName string) time.Duration {
-	// Query database for last completed job for this worker
-	var lastCompletedAt sql.NullTime
-	err := db.QueryRow(`
-		SELECT MAX(completed_at)
-		FROM jobs
-		WHERE status IN ('COMPLETED', 'FAILED')
-		  AND worker_id LIKE $1
-	`, workerName+"%").Scan(&lastCompletedAt)
-
-	if err != nil || !lastCompletedAt.Valid {
-		// No completed jobs found - check when worker started
-		val, err := rdb.Get(ctx, "orchestrator:worker_started_at").Result()
-		if err != nil {
-			// No record, assume just started, return 0 to prevent premature shutdown
-			log.Printf("[SCHEDULER DEBUG] No worker_started_at found for %s, returning 0", workerName)
-			return 0
-		}
-
-		startTime, err := time.Parse(time.RFC3339, val)
-		if err != nil {
-			log.Printf("[SCHEDULER DEBUG] Failed to parse worker_started_at for %s: %v", workerName, err)
-			return 0
-		}
-
-		idleTime := time.Since(startTime)
-		log.Printf("[SCHEDULER DEBUG] Worker %s has no completed jobs, using start time. Idle: %v", workerName, idleTime)
-		return idleTime
-	}
-
-	idleTime := time.Since(lastCompletedAt.Time)
-	log.Printf("[SCHEDULER DEBUG] Worker %s last completed job at %v. Idle: %v", workerName, lastCompletedAt.Time, idleTime)
-	return idleTime
-}
-
 // getWorkerNameForApp returns the worker name for a given app_id
 func getWorkerNameForApp(appID string) string {
-	// This maps app_id to worker name based on workers.yaml
-	// For now, simple mapping (could load from config)
 	mapping := map[string]string{
-		"sdxl-image-gen": "sdxl-worker",
-		"z-image":        "z-image-worker",
+		"sdxl-image-gen":   "sdxl-worker",
+		"z-image":          "z-image-worker",
+		"qwen-image-2512":  "qwen-worker",
 	}
 	return mapping[appID]
-}
-
-// stopAllWorkers stops all GPU workers
-func stopAllWorkers() error {
-	cmd := exec.Command("python3", "/app/scripts/worker_manager.py", "stop")
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		return fmt.Errorf("worker manager error: %s - %v", string(output), err)
-	}
-
-	setCurrentActiveWorker("")
-	// Clear worker start time tracking
-	rdb.Del(ctx, "orchestrator:worker_started_at")
-
-	log.Printf("[SUCCESS] All workers stopped")
-	return nil
 }
 
 // proxyToModal forwards a job request to a Modal endpoint
@@ -878,4 +902,129 @@ func monitorJobTimeouts() {
 			}
 		}
 	}
+}
+
+// monitorStreams watches Redis streams for pending jobs and starts workers as needed
+func monitorStreams() {
+	log.Println("[STREAM MONITOR] Starting stream monitor...")
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// Get all queues with jobs
+		queues, err := rdb.SMembers(ctx, "queues:with_jobs").Result()
+		if err != nil {
+			log.Printf("[STREAM MONITOR] Error reading queues:with_jobs: %v", err)
+			continue
+		}
+
+		for _, queueName := range queues {
+			// Check for pending jobs
+			length, err := rdb.XLen(ctx, queueName).Result()
+			if err != nil {
+				log.Printf("[STREAM MONITOR] Error checking queue %s: %v", queueName, err)
+				continue
+			}
+
+			if length == 0 {
+				rdb.SRem(ctx, "queues:with_jobs", queueName)
+				continue
+			}
+
+			// Find app for this queue
+			appID := getAppIDForQueue(queueName)
+			if appID == "" {
+				log.Printf("[STREAM MONITOR] No app found for queue %s", queueName)
+				continue
+			}
+
+			// Check if worker exists
+			worker := GetWorkerForApp(appID)
+			if worker == nil {
+				// Try to start worker
+				isAvailable, err := IsGPUAvailable()
+				if err != nil {
+					log.Printf("[STREAM MONITOR] Error checking GPU availability: %v", err)
+					continue
+				}
+
+				if isAvailable {
+					log.Printf("[STREAM MONITOR] Starting worker for app %s (queue: %s, pending: %d)", appID, queueName, length)
+					go StartWorkerForApp(appID)
+				} else {
+					log.Printf("[STREAM MONITOR] GPU busy, job queued for app %s (pending: %d)", appID, length)
+				}
+			}
+		}
+	}
+}
+
+// monitorIdleWorkers stops workers that have been idle for too long
+func monitorIdleWorkers() {
+	log.Println("[IDLE MONITOR] Starting idle worker monitor...")
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		workerMutex.RLock()
+		workersToStop := []string{}
+
+		for workerID, info := range workers {
+			if info.State == WorkerStateIdle {
+				idleDuration := time.Since(info.LastActivityTime)
+				timeout := time.Duration(info.IdleTimeoutSeconds) * time.Second
+
+				if idleDuration > timeout {
+					log.Printf("[IDLE MONITOR] Worker %s idle for %v (timeout: %v), stopping",
+						workerID, idleDuration, timeout)
+					workersToStop = append(workersToStop, workerID)
+				}
+			}
+		}
+		workerMutex.RUnlock()
+
+		for _, workerID := range workersToStop {
+			go StopWorker(workerID)
+		}
+	}
+}
+
+// monitorJobCompletions watches for job completions and updates worker state
+func monitorJobCompletions() {
+	log.Println("[JOB MONITOR] Starting job completion monitor...")
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		workerMutex.Lock()
+
+		for workerID, info := range workers {
+			if info.State == WorkerStateProcessing && info.CurrentJobID != "" {
+				var status string
+				err := db.QueryRow(
+					"SELECT status FROM jobs WHERE id = $1",
+					info.CurrentJobID,
+				).Scan(&status)
+
+				if err == nil && (status == "COMPLETED" || status == "FAILED") {
+					info.State = WorkerStateIdle
+					info.LastActivityTime = time.Now()
+					info.CurrentJobID = ""
+					log.Printf("[JOB MONITOR] Worker %s completed job, now IDLE", workerID)
+				}
+			}
+		}
+
+		workerMutex.Unlock()
+	}
+}
+
+// getAppIDForQueue returns the app ID for a given queue name
+func getAppIDForQueue(queueName string) string {
+	for appID, config := range appRegistry {
+		if config.Queue == queueName {
+			return appID
+		}
+	}
+	return ""
 }

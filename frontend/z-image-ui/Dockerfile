@@ -13,7 +13,7 @@ COPY static/ static/
 COPY templates/ templates/
 
 # Expose port
-EXPOSE 7861
+EXPOSE 7862
 
 # Run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7861"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7862"]

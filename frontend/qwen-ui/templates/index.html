@@ -287,6 +287,18 @@
             async handleSubmit(e) {
                 e.preventDefault();
                 
+                // Check for username
+                let username = localStorage.getItem('gpu_orchestrator_username');
+                if (!username) {
+                    username = prompt('Please enter your username:');
+                    if (!username || username.trim() === '') {
+                        alert('Username is required to submit jobs');
+                        return;
+                    }
+                    username = username.trim();
+                    localStorage.setItem('gpu_orchestrator_username', username);
+                }
+                
                 const resolution = document.getElementById('resolution').value.split('x');
                 
                 this.resultPanel.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-text">Generating...</div></div>';
@@ -301,7 +313,8 @@
                             negative_prompt: document.getElementById('negativePrompt').value,
                             width: parseInt(resolution[0]),
                             height: parseInt(resolution[1]),
-                            num_inference_steps: parseInt(document.getElementById('steps').value)
+                            num_inference_steps: parseInt(document.getElementById('steps').value),
+                            username: username
                         })
                     });
                     

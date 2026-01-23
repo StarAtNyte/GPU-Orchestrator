@@ -343,7 +343,7 @@ func adminWorkersStatusHandler(w http.ResponseWriter, r *http.Request) {
 		workersList = append(workersList, WorkerStatusInfo{
 			WorkerID:      workerID,
 			AppID:         appID,
-			Status:        workerInfo.Status,
+			Status:        string(workerInfo.State),
 			GPUName:       gpuName,
 			VRAMTotal:     vramTotal,
 			LastHeartbeat: &workerInfo.LastHeartbeat,

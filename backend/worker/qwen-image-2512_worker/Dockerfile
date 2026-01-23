@@ -15,13 +15,13 @@ RUN apt-get update && apt-get install -y \
 RUN python3.11 -m pip install --upgrade pip
 
 # Copy requirements
-COPY requirements.txt .
+COPY worker/qwen-image-2512_worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY main.py .
-COPY handler.py .
-COPY ../shared/ shared/
+COPY worker/qwen-image-2512_worker/main.py .
+COPY worker/qwen-image-2512_worker/handler.py .
+COPY worker/shared/ shared/
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
