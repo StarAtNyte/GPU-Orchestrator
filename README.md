@@ -1,672 +1,268 @@
-# GPU Orchestrator
+# GPU-Polling
 
-A GPU job orchestration system for AI/ML workloads with isolated workers, **dynamic worker management**, hybrid cloud support, and modern web UIs.
-
-## What is This?
-
-GPU Orchestrator is a distributed system that:
-- **Routes AI/ML jobs** to local GPU workers or cloud providers (Modal, Replicate)
-- **Isolates dependencies** - each model runs in its own container (no version conflicts!)
-- **Dynamically manages GPU access** - automatically switches workers to avoid OOM errors
-- **Scales horizontally** - run multiple workers per model type
-- **Provides web UIs** - modern frontends for each application
-- **Tracks jobs** - PostgreSQL for persistence, Redis for queuing
-
-Perfect for:
-- Running multiple AI models on shared GPU infrastructure with limited VRAM
-- Building AI-powered web applications
-- Mixing local GPUs with cloud burst capacity
-- Research labs with diverse model requirements
-- Single GPU setups with multiple large models (Z-Image, SDXL, LLaMA, etc.)
+A distributed GPU orchestration system for managing job submission and execution across GPU workers. The system uses a separated architecture with a backend running on an Ubuntu GPU PC and a frontend for user interfaces.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      User Browser                           │
-│              http://localhost:7861 (SDXL UI)                │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         │ HTTP Requests
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│                 Frontend Layer (No GPU)                     │
-│  frontends/                                                 │
-│    ├── sdxl-ui/          Modern web UI for image gen       │
-│    ├── whisper-ui/       Speech-to-text interface          │
-│    └── llama-chat/       Chat interface for LLMs           │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         │ Submit jobs via HTTP
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│              Orchestrator (Go) - Port 8080                  │
-│  • Routes jobs to appropriate workers                       │
-│  • Proxies cloud endpoints (Modal, Replicate)              │
-│  • Manages app registry (config/apps.yaml)                 │
-│  • Tracks status in PostgreSQL                             │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         │ Redis Streams (local) or HTTP (cloud)
-                         │
-        ┌────────────────┼────────────────┬──────────────────┐
-        │                │                │                  │
-        ↓                ↓                ↓                  ↓
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ SDXL Worker  │  │Whisper Worker│  │ LLaMA Worker │  │ Modal Cloud  │
-│ (Local GPU)  │  │  (CPU-only)  │  │ (Local GPU)  │  │  (Remote)    │
-│              │  │              │  │              │  │              │
-│ PyTorch 2.0  │  │ Whisper 2.2  │  │ vLLM 0.3.0   │  │ Serverless   │
-│ CUDA 11.8    │  │ No GPU       │  │ CUDA 12.1    │  │ Auto-scale   │
-│ Diffusers    │  │ ffmpeg       │  │ Llama 3 8B   │  │              │
-└──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ BACKEND (Ubuntu GPU PC)                                             │
+│                                                                     │
+│  ┌──────────┐  ┌───────┐  ┌──────┐                                 │
+│  │PostgreSQL│  │ Redis │  │ etcd │   Infrastructure                │
+│  └────┬─────┘  └───┬───┘  └──┬───┘                                 │
+│       └────────────┼────────┘                                       │
+│                    ▼                                                │
+│            ┌──────────────┐                                         │
+│            │ Orchestrator │  Job routing & GPU management           │
+│            └──────┬───────┘                                         │
+│                   │                                                 │
+│     ┌─────────────┼─────────────┐                                   │
+│     ▼             ▼             ▼                                   │
+│ ┌────────┐  ┌──────────┐  ┌────────────┐                           │
+│ │  SDXL  │  │ Z-Image  │  │   Qwen     │   GPU Workers              │
+│ │ Worker │  │  Worker  │  │   Worker   │                           │
+│ └────────┘  └──────────┘  └────────────┘                           │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              │ HTTP (port 9090)
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ FRONTEND (Linux/Windows Server)                                     │
+│                                                                     │
+│  ┌────────────┐  ┌─────────┐  ┌──────────┐  ┌────────┐  ┌───────┐  │
+│  │    Main    │  │  SDXL   │  │ Z-Image  │  │  Qwen  │  │ Admin │  │
+│  │ Dashboard  │  │   UI    │  │    UI    │  │   UI   │  │  UI   │  │
+│  │   :8080    │  │  :7861  │  │  :7862   │  │ :7863  │  │ :8000 │  │
+│  └────────────┘  └─────────┘  └──────────┘  └────────┘  └───────┘  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
-
-### Key Components
-
-1. **Frontends** (`frontends/`) - Lightweight web UIs (FastAPI)
-   - No GPU required, just serve web pages
-   - Talk to orchestrator behind the scenes
-   - Each app gets custom UI tailored to its needs
-
-2. **Orchestrator** (`orchestrator/`) - Central router (Go)
-   - Multi-backend: routes to local workers or cloud APIs
-   - App registry from YAML config
-   - Job tracking in PostgreSQL
-   - Worker health monitoring via etcd
-
-3. **Workers** (`worker/`) - Isolated GPU containers (Python)
-   - Each model in separate container
-   - No dependency conflicts between apps
-   - Auto-scaling via consumer groups
-   - Shared utilities in `worker/shared/`
-
-4. **Infrastructure**
-   - **Redis** - Job queues (streams) for local workers
-   - **PostgreSQL** - Job status and results
-   - **etcd** - Worker registration and health
-   - **Docker** - Container isolation
 
 ## Quick Start
 
 ### Prerequisites
 
-- Docker & Docker Compose
-- NVIDIA GPU with drivers (for local workers)
+- Docker and Docker Compose
+- NVIDIA GPU with drivers installed
 - NVIDIA Container Toolkit
 
-### 1. Clone and Configure
+### 1. Start the Backend (Ubuntu GPU PC)
 
 ```bash
-git clone <repo>
-cd gpu-orchestrator
+cd backend
 
-# Create environment file
-cp .env.example .env
-# Edit .env with your database credentials
+# Copy and configure environment
+cp ../.env.example .env
+# Edit .env with your settings (POSTGRES_PASSWORD, HF_TOKEN, etc.)
+
+# Start all services
+docker-compose up -d
+
+# Verify services are running
+docker-compose ps
 ```
 
-### 2. Start Infrastructure
+### 2. Start the Frontend (Linux/Windows Server)
 
 ```bash
-# Start core services
-docker compose up -d postgres redis etcd orchestrator
+cd frontend
 
-# Check status
-docker compose ps
+# Edit docker-compose.yml to set ORCHESTRATOR_URL to your backend IP
+# Example: http://192.168.50.28:9090
+
+# Start all UI services
+docker-compose up -d
+
+# Verify services are running
+docker-compose ps
 ```
 
-### 3. Start Workers
+### 3. Access the Application
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Main Dashboard | http://localhost:8080 | Service hub & discovery |
+| SDXL UI | http://localhost:7861 | SDXL image generation |
+| Z-Image UI | http://localhost:7862 | Z-Image Turbo generation |
+| Qwen UI | http://localhost:7863 | Qwen vision-language model |
+| Admin Dashboard | http://localhost:8000 | System monitoring |
+
+## Docker Commands
+
+### Start Services
 
 ```bash
-# Start SDXL image generation worker
-docker compose up -d sdxl-worker
+# Start all backend services
+cd backend && docker-compose up -d
 
-# Start Whisper speech-to-text worker
-docker compose up -d whisper-worker
+# Start all frontend services
+cd frontend && docker-compose up -d
 
-# Check worker registration
-curl http://localhost:8080/workers
+# Start specific service
+docker-compose up -d <service-name>
 ```
 
-### 4. Start Frontend
+### Stop Services
 
 ```bash
-# Start SDXL web UI
-docker compose up -d sdxl-ui
+# Stop all services (keeps containers)
+docker-compose stop
 
-# Access at http://localhost:7861
+# Stop and remove containers
+docker-compose down
+
+# Stop and remove containers + volumes (WARNING: deletes data)
+docker-compose down -v
 ```
 
-### 5. Test the System
+### Restart Services
 
 ```bash
-# Submit a job via API
-curl -X POST http://localhost:8080/submit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "app_id": "sdxl-image-gen",
-    "params": {
-      "prompt": "A serene mountain landscape at sunset",
-      "width": "1024",
-      "height": "1024",
-      "num_inference_steps": "30"
-    }
-  }'
+# Restart all services
+docker-compose restart
 
-# Returns: {"job_id": "uuid", "status": "queued"}
+# Restart specific service
+docker-compose restart <service-name>
 
-# Check status
-curl http://localhost:8080/status/<job-id>
-```
+# Full restart (rebuild if needed)
+docker-compose down && docker-compose up -d
 
-## Project Structure
-
-```
-gpu-orchestrator/
-├── frontends/                    # Web UIs (lightweight, no GPU)
-│   ├── sdxl-ui/                 # SDXL image generation UI
-│   │   ├── app.py               # FastAPI backend
-│   │   ├── templates/           # HTML templates
-│   │   ├── static/              # CSS, JavaScript
-│   │   ├── Dockerfile           # Container definition
-│   │   └── requirements.txt     # Python dependencies
-│   └── [other UIs]/
-│
-├── orchestrator/                 # Central router (Go)
-│   ├── main.go                  # HTTP server & routing logic
-│   ├── config.go                # YAML config loader
-│   ├── Dockerfile               # Container definition
-│   └── go.mod                   # Go dependencies
-│
-├── worker/                       # GPU workers (isolated)
-│   ├── shared/                  # Common utilities
-│   │   ├── redis_client.py      # Redis stream consumer
-│   │   ├── db.py                # PostgreSQL client
-│   │   ├── etcd_client.py       # Service discovery
-│   │   └── worker_pb2.py        # Protobuf messages
-│   │
-│   ├── sdxl-image-gen_worker/   # SDXL isolated worker
-│   │   ├── main.py              # Worker loop
-│   │   ├── handler.py           # SDXL inference logic
-│   │   ├── requirements.txt     # PyTorch, diffusers, etc.
-│   │   └── Dockerfile           # CUDA 11.8 base
-│   │
-│   ├── whisper-stt_worker/      # Whisper isolated worker
-│   │   ├── main.py              # Worker loop
-│   │   ├── handler.py           # Whisper inference
-│   │   ├── requirements.txt     # Whisper, ffmpeg
-│   │   └── Dockerfile           # CPU-only base
-│   │
-│   └── [other workers]/
-│
-├── worker_template/              # Templates for new workers
-│   ├── Dockerfile.template
-│   ├── main.py.template
-│   ├── handler.py.template
-│   └── requirements.txt.template
-│
-├── config/
-│   └── apps.yaml                # App registry (loaded by orchestrator)
-│
-├── docker compose.yml           # Service orchestration
-├── create_new_app.sh            # Generator script
-└── README.md                    # This file
-```
-
-## Adding New Applications
-
-Use the generator script to create new workers or frontends:
-
-```bash
-# Create isolated local GPU worker
-./create_new_app.sh my-model local
-
-# Create cloud worker (Modal)
-./create_new_app.sh my-model modal
-
-# Create frontend UI
-./create_new_app.sh my-model-ui frontend
-```
-
-Each generates all necessary files with templates. See [ADDING_NEW_APPS.md](ADDING_NEW_APPS.md) for detailed guide.
-
-### Example: Adding Whisper STT
-
-```bash
-# 1. Generate worker template
-./create_new_app.sh whisper-stt local
-
-# 2. Edit handler.py to load Whisper model
-# 3. Add dependencies to requirements.txt
-# 4. Add to docker compose.yml
-# 5. Build and start
-
-docker compose build whisper-worker
-docker compose up -d whisper-worker
-```
-
-## Monitoring
-
-### View Active Workers
-
-```bash
-curl http://localhost:8080/workers
-```
-
-Returns:
-```json
-{
-  "count": 3,
-  "workers": [
-    {
-      "worker_id": "sdxl-worker-1",
-      "app_id": "sdxl-image-gen",
-      "status": "idle",
-      "last_heartbeat": "2024-01-15T10:30:00Z"
-    }
-  ]
-}
-```
-
-### Check Job Status
-
-```bash
-curl http://localhost:8080/status/<job-id>
+# Restart with rebuild (after code changes)
+docker-compose up -d --build
 ```
 
 ### View Logs
 
 ```bash
-# Orchestrator logs
-docker compose logs -f orchestrator
+# View all logs
+docker-compose logs
 
-# Worker logs
-docker compose logs -f sdxl-worker
+# Follow logs in real-time
+docker-compose logs -f
 
-# All services
-docker compose logs -f
+# View logs for specific service
+docker-compose logs -f <service-name>
+
+# View last 100 lines
+docker-compose logs --tail=100
 ```
 
-### Database Queries
+### Check Status
 
 ```bash
-# Connect to PostgreSQL
-docker exec -it postgres psql -U orchestrator -d orchestrator
+# Check running containers
+docker-compose ps
 
-# View recent jobs
-SELECT job_id, app_id, status, created_at
-FROM jobs
-ORDER BY created_at DESC
-LIMIT 10;
+# Check GPU status (backend)
+curl http://localhost:9090/health/gpu
 
-# View job queue depth
-SELECT app_id, status, COUNT(*)
-FROM jobs
-GROUP BY app_id, status;
+# Check registered workers
+curl http://localhost:9090/workers
 ```
 
-### Redis Queue Debugging
+## Project Structure
 
-Check queue health and troubleshoot stuck jobs:
-
-```bash
-# List all job queues in Redis
-docker exec redis redis-cli KEYS "jobs:*"
-
-# Check queue lengths (total messages in stream)
-docker exec redis redis-cli XLEN jobs:z-image
-docker exec redis redis-cli XLEN jobs:sdxl
-
-# Check PENDING messages (unprocessed jobs in consumer group)
-# This is what the scheduler uses to decide if workers are needed
-# Consumer group naming: {app-id}-workers (e.g., z-image-workers, sdxl-workers)
-docker exec redis redis-cli XPENDING jobs:z-image z-image-workers
-docker exec redis redis-cli XPENDING jobs:sdxl sdxl-workers
-
-# View detailed pending info (shows which worker has which job)
-docker exec redis redis-cli XPENDING jobs:z-image z-image-workers - + 10
-docker exec redis redis-cli XPENDING jobs:sdxl sdxl-workers - + 10
-
-# Clear stuck/phantom messages (emergency use only!)
-# WARNING: This deletes the entire queue including unprocessed jobs
-docker exec redis redis-cli DEL jobs:z-image
-docker exec redis redis-cli DEL jobs:sdxl
-
-# Inspect specific message in stream
-docker exec redis redis-cli XRANGE jobs:z-image - + COUNT 1
-docker exec redis redis-cli XRANGE jobs:sdxl - + COUNT 1
-
-# View consumer group info
-docker exec redis redis-cli XINFO GROUPS jobs:z-image
-docker exec redis redis-cli XINFO GROUPS jobs:sdxl
-
-# View which workers are in a consumer group
-docker exec redis redis-cli XINFO CONSUMERS jobs:z-image z-image-workers
-docker exec redis redis-cli XINFO CONSUMERS jobs:sdxl sdxl-workers
 ```
-
-**Queue and Consumer Group Naming:**
-- Queue names: `jobs:{app-id}` (e.g., `jobs:z-image`, `jobs:sdxl`)
-- Consumer groups: `{app-id}-workers` (e.g., `z-image-workers`, `sdxl-workers`)
-- Queues/groups only exist after the first worker starts or first job is submitted
-- Running `XPENDING` on non-existent queue shows: `NOGROUP No such key`
-
-**How Queue Cleanup Works:**
-- Workers acknowledge messages with `XACK` after processing
-- Workers delete messages with `XDEL` to remove from stream entirely
-- Scheduler checks `XPENDING` (not `XLEN`) to count unprocessed jobs
-- This prevents stuck/acknowledged messages from triggering worker switches
-
-**Troubleshooting Queue Issues:**
-
-1. **Workers keep switching randomly**: Check for phantom messages
-   ```bash
-   # First, list all queues
-   docker exec redis redis-cli KEYS "jobs:*"
-
-   # For each queue, check pending count
-   docker exec redis redis-cli XPENDING jobs:z-image z-image-workers
-   docker exec redis redis-cli XPENDING jobs:sdxl sdxl-workers
-
-   # If pending count > 0 but you didn't submit jobs, messages are stuck
-   # Clear the specific queue:
-   docker exec redis redis-cli DEL jobs:z-image
-   ```
-
-2. **NOGROUP error when checking queue**: Normal if worker never started
-   ```bash
-   # Error: "NOGROUP No such key 'jobs:sdxl' or consumer group 'sdxl-workers'"
-   # This means the queue/group doesn't exist yet (worker never ran)
-   # No action needed - queue will be created when worker starts
-   ```
-
-3. **Jobs stuck in QUEUED state**: Worker might have crashed mid-processing
-   ```bash
-   # Check worker logs
-   docker compose logs z-image-worker
-
-   # Check pending messages
-   docker exec redis redis-cli XPENDING jobs:z-image z-image-workers - + 10
-
-   # Look for messages assigned to dead workers
-   # If found, restart the worker or manually delete the queue
-   ```
-
-4. **Queue length doesn't match pending count**: Normal!
-   - `XLEN` = total messages in stream (including acknowledged)
-   - `XPENDING` = only unprocessed messages
-   - Scheduler uses `XPENDING`, not `XLEN`
-   - Example: `XLEN=5, XPENDING=0` means 5 completed jobs still in stream
-
-## Available Applications
-
-### Z-Image Image Generation
-
-**Worker**: `worker/z-image_worker/`
-**Frontend**: `frontends/z-image-ui/` (Port 7861)
-**GPU**: Required (20GB VRAM)
-
-Generate high-quality images from text prompts.
-
-### SDXL Image Generation
-
-**Worker**: `worker/sdxl_worker/`
-**Frontend**: `frontends/sdxl-ui/` (Port 7862)
-**GPU**: Required (8GB VRAM)
-
-Generate high-quality images from text prompts.
+GPU-Polling/
+├── backend/                    # Ubuntu GPU PC services
+│   ├── docker-compose.yml      # Backend orchestration
+│   ├── orchestrator/           # Go-based job router
+│   ├── worker/                 # GPU worker implementations
+│   │   ├── sdxl_worker/        # SDXL image generation
+│   │   ├── z-image_worker/     # Z-Image Turbo
+│   │   └── qwen-image-2512_worker/  # Qwen vision-language
+│   ├── config/                 # Configuration files
+│   └── init.sql                # Database schema
+│
+├── frontend/                   # UI services
+│   ├── docker-compose.yml      # Frontend orchestration
+│   ├── main-dashboard/         # Service hub (:8080)
+│   ├── sdxl-ui/                # SDXL UI (:7861)
+│   ├── z-image-ui/             # Z-Image UI (:7862)
+│   ├── qwen-ui/                # Qwen UI (:7863)
+│   └── admin-dashboard/        # Admin panel (:8000)
+│
+├── .env.example                # Environment template
+├── development.md              # Development guide
+└── ADDING_NEW_APPS.md          # Guide for new models
+```
 
 ## Configuration
 
 ### Environment Variables
 
-Create `.env` file:
+Copy `.env.example` to `.env` and configure:
 
 ```bash
-# PostgreSQL
-POSTGRES_USER=orchestrator
-POSTGRES_PASSWORD=your-secure-password
-POSTGRES_DB=orchestrator
+# Database
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_secure_password
+POSTGRES_DB=gpu_orchestrator
 
-# Redis
-REDIS_HOST=redis
-REDIS_PORT=6379
-
-# etcd
-ETCD_HOST=etcd
-ETCD_PORT=2379
-
-# HuggingFace (for gated models)
-HF_TOKEN=your-hf-token
+# Hugging Face (for model downloads)
+HF_TOKEN=your_huggingface_token
 ```
 
-### App Registry
+### Changing Backend URL
 
-Edit `config/apps.yaml` to add/modify applications:
+Edit `frontend/docker-compose.yml` and update `ORCHESTRATOR_URL`:
 
 ```yaml
-apps:
-  - id: "sdxl-image-gen"
-    name: "SDXL Image Generator"
-    type: "local"              # local or modal
-    queue: "jobs:sdxl"         # Redis stream name
-    description: "Generate images with Stable Diffusion XL"
-    gpu_vram_gb: 12
-    docker_image: "gpu-orchestrator-sdxl-worker:latest"
-    parameters:
-      - name: "prompt"
-        type: "string"
-        required: true
+environment:
+  - ORCHESTRATOR_URL=http://<BACKEND_IP>:9090
 ```
 
-## Scaling
+## Troubleshooting
 
-### Horizontal Scaling (Multiple Workers)
+### Services not starting
 
 ```bash
-# Scale SDXL workers to 3 instances
-docker compose up -d --scale sdxl-worker=3
+# Check container logs
+docker-compose logs <service-name>
 
-# Each worker joins the same consumer group
-# Jobs are load-balanced automatically
+# Check if ports are in use
+sudo lsof -i :9090
+sudo lsof -i :8080
 ```
 
-### GPU Assignment
-
-Pin workers to specific GPUs:
-
-```yaml
-# docker compose.yml
-sdxl-worker-gpu0:
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            device_ids: ['0']
-
-sdxl-worker-gpu1:
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            device_ids: ['1']
-```
-
-### Hybrid Cloud
-
-Mix local and cloud workers:
-
-```yaml
-# config/apps.yaml
-apps:
-  - id: "sdxl-local"
-    type: "local"
-    queue: "jobs:sdxl"
-
-  - id: "sdxl-cloud"
-    type: "modal"
-    endpoint: "https://your-org--sdxl.modal.run/process"
-```
-
-## Deploying Code Changes
-
-After modifying worker code, handler logic, or frontend files, you need to rebuild and restart the affected services.
-
-### Rebuilding a Worker
+### GPU not detected
 
 ```bash
-# Stop the worker
-docker compose stop z-image-worker
+# Verify NVIDIA drivers
+nvidia-smi
 
-# Rebuild with latest code
-docker compose build z-image-worker
-
-# Start with new image
-docker compose up -d z-image-worker
-
-# Or do all in one command:
-docker compose up -d --build z-image-worker
+# Check NVIDIA Container Toolkit
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 ```
 
-### Rebuilding the Orchestrator
+### Workers not registering
 
 ```bash
-# After changing orchestrator Go code
-docker compose stop orchestrator
-docker compose build orchestrator
-docker compose up -d orchestrator
+# Check orchestrator logs
+cd backend && docker-compose logs orchestrator
+
+# Check worker logs
+docker-compose logs sdxl-worker
+
+# Verify network connectivity
+docker network ls
+docker network inspect backend_backend-network
 ```
 
-### Rebuilding a Frontend
+### Database issues
 
 ```bash
-# After changing UI code
-docker compose restart z-image-ui
-
-# Or rebuild if you changed Dockerfile/requirements
-docker compose up -d --build z-image-ui
+# Reset database (WARNING: deletes all data)
+cd backend
+docker-compose down -v
+docker-compose up -d postgres
+docker-compose up -d
 ```
 
-### Rebuilding Everything
+## Adding New Workers
 
-```bash
-# Nuclear option - rebuild all services
-docker compose build
-docker compose up -d
+See [ADDING_NEW_APPS.md](ADDING_NEW_APPS.md) for instructions on adding new GPU workers.
 
-# Or rebuild specific services
-docker compose up -d --build orchestrator z-image-worker z-image-ui
-```
+## Development
 
-### Common Gotchas
-
-**Container is running old code:**
-- Running `docker compose up -d` after building won't restart containers
-- Use `docker compose up -d --force-recreate` to force restart
-- Or explicitly restart: `docker compose restart service-name`
-
-**Build cache issues:**
-- Use `--no-cache` to force clean build: `docker compose build --no-cache`
-- Useful when dependencies change or builds behave unexpectedly
-
-**Template changes:**
-- Changes to `worker_template/` only affect NEW workers created after the change
-- Existing workers need manual updates to their code
-
-### Quick Reference
-
-```bash
-# Change worker code → rebuild worker
-docker compose up -d --build z-image-worker
-
-# Change orchestrator code → rebuild orchestrator
-docker compose up -d --build orchestrator
-
-# Change frontend code → restart frontend (fast)
-docker compose restart z-image-ui
-
-# Change frontend Dockerfile → rebuild frontend
-docker compose up -d --build z-image-ui
-
-# Change config/apps.yaml → restart orchestrator
-docker compose restart orchestrator
-
-# Change .env → restart affected services
-docker compose up -d
-```
-
-## Dynamic Worker Management (NEW!)
-
-For GPUs with limited VRAM, the orchestrator can automatically switch between workers:
-
-```bash
-# Check worker status
-./scripts/worker_manager.py status
-
-# Submit job (auto-switches workers)
-./scripts/submit_job.sh sdxl-image-gen '{"prompt": "A cat"}'
-
-# Test automatic switching
-./scripts/test_dynamic_switching.sh
-```
-
-**Features:**
-- Exclusive GPU access (one worker at a time)
-- Automatic worker switching on job submission
-- Configurable startup/shutdown times
-- Zero manual intervention required
-
-**Quick Start:**
-```bash
-# Start infrastructure only
-docker compose up -d redis postgres etcd orchestrator
-
-# Workers are managed dynamically (not started automatically)
-# Submit a job and the orchestrator starts the right worker
-./scripts/submit_job.sh z-image '{"prompt": "A futuristic city"}'
-```
-
-See **[QUICKSTART_DYNAMIC_WORKERS.md](QUICKSTART_DYNAMIC_WORKERS.md)** for complete guide.
-
-## Documentation
-
-- **[README.md](README.md)** - This file (system overview)
-- **[ADDING_NEW_APPS.md](ADDING_NEW_APPS.md)** - Complete guide to adding workers and frontends
-- **[DYNAMIC_WORKER_MANAGEMENT.md](DYNAMIC_WORKER_MANAGEMENT.md)** - Dynamic GPU management (detailed)
-- **[QUICKSTART_DYNAMIC_WORKERS.md](QUICKSTART_DYNAMIC_WORKERS.md)** - Quick start guide for dynamic workers
-- **[scripts/README.md](scripts/README.md)** - Helper scripts documentation
-
-## Roadmap
-
-- [x] Multi-backend orchestration (local + cloud)
-- [x] Isolated worker architecture
-- [x] PostgreSQL job tracking
-- [x] Web UI framework (FastAPI + modern CSS)
-- [x] Worker health monitoring (etcd)
-- [x] App registry (YAML config)
-- [x] **Dynamic worker management with exclusive GPU access**
-- [x] **Automatic worker switching**
-- [x] **Helper scripts for job submission and monitoring**
-- [ ] Prometheus metrics
-- [ ] Job prioritization
-- [ ] Cost tracking (cloud vs local)
-- [ ] Auto-scaling based on queue depth
-- [ ] Admin dashboard
-- [ ] API authentication
-
-
-Built with:
-- **Go** - Orchestrator backend
-- **Python** - ML workers
-- **FastAPI** - Web frontends
-- **Redis Streams** - Job queuing
-- **PostgreSQL** - Job persistence
-- **etcd** - Service discovery
-- **Docker** - Container isolation
-- **PyTorch/Diffusers** - ML frameworks
-
----
-
+See [development.md](development.md) for the complete development setup guide.

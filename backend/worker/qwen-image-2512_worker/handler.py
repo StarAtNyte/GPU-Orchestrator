@@ -7,7 +7,7 @@ import base64
 import io
 from PIL import Image
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 
 logger = logging.getLogger("qwen-handler")
 
@@ -19,8 +19,8 @@ logger.info(f"Loading Qwen model: {MODEL_NAME}")
 logger.info(f"Device: {DEVICE}")
 
 try:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
+    processor = AutoProcessor.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    model = Qwen2VLForConditionalGeneration.from_pretrained(
         MODEL_NAME,
         torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
         device_map="auto" if DEVICE == "cuda" else None,
@@ -28,6 +28,7 @@ try:
     )
     model.eval()
     logger.info("Model loaded successfully")
+    logger.warning("NOTE: Qwen2-VL is a vision-understanding model, NOT an image generator")
 except Exception as e:
     logger.error(f"Failed to load model: {str(e)}")
     raise

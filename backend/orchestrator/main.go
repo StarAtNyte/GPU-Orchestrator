@@ -578,21 +578,16 @@ func userJobsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// userJobDetailsHandler returns detailed information about a specific job
+// userJobDetailsHandler returns detailed information about a specific job or deletes it
 func userJobDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	// Add CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 	// Handle preflight
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -607,6 +602,50 @@ func userJobDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	if username == "" {
 		http.Error(w, "Username parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		// Handle DELETE request - remove job from user's history
+		// First verify the job belongs to this user
+		var jobUsername string
+		err := db.QueryRow("SELECT username FROM jobs WHERE id = $1", jobID).Scan(&jobUsername)
+
+		if err == sql.ErrNoRows {
+			http.Error(w, "Job not found", http.StatusNotFound)
+			return
+		} else if err != nil {
+			log.Printf("[ERROR] Database error: %v", err)
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
+		}
+
+		if jobUsername != username {
+			http.Error(w, "Unauthorized - job does not belong to this user", http.StatusForbidden)
+			return
+		}
+
+		// Delete the job
+		_, err = db.Exec("DELETE FROM jobs WHERE id = $1", jobID)
+		if err != nil {
+			log.Printf("[ERROR] Failed to delete job %s: %v", jobID, err)
+			http.Error(w, "Failed to delete job", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("[INFO] User %s deleted job %s", username, jobID)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Job deleted successfully",
+			"job_id":  jobID,
+		})
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 

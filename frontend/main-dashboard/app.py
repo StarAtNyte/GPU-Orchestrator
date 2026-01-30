@@ -220,6 +220,25 @@ async def get_user_job_details(job_id: str, username: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/user/jobs/{job_id}")
+async def delete_user_job(job_id: str, username: str):
+    """Delete a job from user's history."""
+    try:
+        response = requests.delete(
+            f"{ORCHESTRATOR_URL}/user/jobs/{job_id}",
+            params={"username": username},
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Job not found")
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Failed to delete job")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8888)

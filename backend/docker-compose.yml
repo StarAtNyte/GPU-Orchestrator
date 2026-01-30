@@ -7,13 +7,13 @@ services:
   # PostgreSQL - Job tracking
   postgres:
     image: timescale/timescaledb:latest-pg15
-    container_name: postgres
+    container_name: gpu-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
       POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Using 5433 to avoid conflict with docmost
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -29,9 +29,9 @@ services:
   # Redis - Job queuing
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: gpu-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
     networks:
       - backend-network
     restart: unless-stopped
@@ -45,12 +45,12 @@ services:
   # etcd - Worker registry and service discovery
   etcd:
     image: quay.io/coreos/etcd:v3.5.9
-    container_name: etcd
+    container_name: gpu-etcd
     environment:
       ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
       ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
     ports:
-      - "2379:2379"
+      - "12379:2379"
     networks:
       - backend-network
     restart: unless-stopped
@@ -65,7 +65,7 @@ services:
     build:
       context: ./orchestrator
       dockerfile: Dockerfile
-    container_name: orchestrator
+    container_name: gpu-orchestrator
     depends_on:
       - postgres
       - redis

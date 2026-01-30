@@ -273,6 +273,34 @@
                    (output.images && output.images[0]) || null;
         }
 
+        // Delete job
+        async function deleteJob(jobId, event) {
+            event.stopPropagation();
+
+            if (!confirm('Are you sure you want to remove this job from your history?')) {
+                return;
+            }
+
+            const username = getUsername();
+            if (!username) return;
+
+            try {
+                const response = await fetch(`/api/user/jobs/${jobId}?username=${encodeURIComponent(username)}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadJobs();
+                } else {
+                    const error = await response.json();
+                    alert('Failed to delete job: ' + (error.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error deleting job:', error);
+                alert('Failed to delete job');
+            }
+        }
+
         // Render job card
         function renderJobCard(job) {
             const hasOutput = job.status === 'COMPLETED' && (job.output || job.result);
@@ -283,24 +311,33 @@
                 const output = job.output || job.result;
                 const mediaType = getMediaType(output);
                 const mediaData = getMediaData(output);
-                
+
                 if (mediaData && mediaType === 'image') {
                     const imageSrc = mediaData.startsWith('data:') ? mediaData : `data:image/png;base64,${mediaData}`;
                     mediaPreview = `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4">
+                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 relative group">
                             <img src="${imageSrc}" alt="Generated image" class="w-full h-full object-cover" />
+                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
+                                <span class="material-symbols-outlined text-sm">delete</span>
+                            </button>
                         </div>
                     `;
                 } else if (mediaData && mediaType === 'video') {
                     mediaPreview = `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
+                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center relative group">
                             <span class="text-6xl">🎬</span>
+                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
+                                <span class="material-symbols-outlined text-sm">delete</span>
+                            </button>
                         </div>
                     `;
                 } else if (mediaData && mediaType === 'audio') {
                     mediaPreview = `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
+                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center relative group">
                             <span class="text-6xl">🎵</span>
+                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
+                                <span class="material-symbols-outlined text-sm">delete</span>
+                            </button>
                         </div>
                     `;
                 }
@@ -310,10 +347,13 @@
             const truncatedPrompt = prompt.length > 80 ? prompt.substring(0, 80) + '...' : prompt;
 
             return `
-                <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-6 job-card-hover cursor-pointer" onclick="viewJobDetails('${job.job_id}')">
+                <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-6 job-card-hover cursor-pointer relative group" onclick="viewJobDetails('${job.job_id}')">
                     ${mediaPreview || `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
+                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center relative">
                             <span class="text-6xl">${getServiceIcon(job.app_id)}</span>
+                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
+                                <span class="material-symbols-outlined text-sm">delete</span>
+                            </button>
                         </div>
                     `}
                     <div class="flex items-center justify-between mb-3">
@@ -321,9 +361,11 @@
                         ${getStatusBadge(job.status)}
                     </div>
                     <p class="text-sm text-slate-600 dark:text-slate-300 mb-3 line-clamp-2">${truncatedPrompt}</p>
-                    <div class="flex items-center gap-2 text-xs text-slate-400">
-                        <span class="material-symbols-outlined text-xs">schedule</span>
-                        <span>${formatDate(job.created_at)}</span>
+                    <div class="flex items-center justify-between text-xs text-slate-400">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-xs">schedule</span>
+                            <span>${formatDate(job.created_at)}</span>
+                        </div>
                     </div>
                     ${job.error_log ? `<p class="mt-2 text-xs text-red-500">${job.error_log}</p>` : ''}
                 </div>
