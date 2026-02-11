@@ -14,6 +14,20 @@ workers:
     startup_time_seconds: 45
     shutdown_time_seconds: 10
 
+  qwen-image-edit-worker:
+    app_id: "qwen-image-edit"
+    queue: "jobs:qwen-image-edit"
+    vram_required_gb: 12
+    startup_time_seconds: 60
+    shutdown_time_seconds: 10
+
+  qwen-image-variations-worker:
+    app_id: "qwen-image-variations"
+    queue: "jobs:qwen-image-variations"
+    vram_required_gb: 12
+    startup_time_seconds: 60
+    shutdown_time_seconds: 10
+
 # Global settings
 settings:
   # Only one worker can be active at a time

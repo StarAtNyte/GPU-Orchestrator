@@ -35,6 +35,9 @@ type WorkerInfo struct {
 	CurrentJobID       string
 	StartedAt          time.Time
 	IdleTimeoutSeconds int
+	StartupFailures    int       // Track consecutive startup failures
+	LastFailureTime    time.Time // Last time worker failed to start
+	Backoff            time.Duration // Exponential backoff delay
 }
 
 var (
@@ -42,6 +45,8 @@ var (
 	workerMutex        sync.RWMutex
 	gpuAllocationMutex sync.Mutex
 	dockerCli          *client.Client
+	workerFailureThreshold = 5 // Max consecutive failures before circuit breaker
+	workerMaxBackoff       = 5 * time.Minute // Max backoff delay
 )
 
 // InitWorkerManager initializes the worker manager with Docker SDK client
@@ -82,8 +87,24 @@ func StartWorkerForApp(appID string) (string, error) {
 	// Check if worker already exists
 	workerMutex.Lock()
 	if existing := workers[workerID]; existing != nil {
-		workerMutex.Unlock()
-		return "", fmt.Errorf("worker %s already exists in state %s", workerID, existing.State)
+		// Check circuit breaker - if worker has failed too many times, don't restart
+		if existing.StartupFailures >= workerFailureThreshold {
+			timeSinceLastFailure := time.Since(existing.LastFailureTime)
+			if timeSinceLastFailure < existing.Backoff {
+				workerMutex.Unlock()
+				return "", fmt.Errorf("worker %s in circuit breaker (failures: %d, backoff: %v remaining)",
+					workerID, existing.StartupFailures, existing.Backoff - timeSinceLastFailure)
+			}
+			// Reset backoff if enough time has passed
+			log.Printf("[WORKER_MANAGER] Resetting circuit breaker for %s after %v", workerID, timeSinceLastFailure)
+			existing.StartupFailures = 0
+			existing.Backoff = 0
+		}
+
+		if existing.State != WorkerStateAbsent {
+			workerMutex.Unlock()
+			return "", fmt.Errorf("worker %s already exists in state %s", workerID, existing.State)
+		}
 	}
 
 	// Create worker info entry
@@ -99,6 +120,8 @@ func StartWorkerForApp(appID string) (string, error) {
 		StartedAt:          time.Now(),
 		LastActivityTime:   time.Now(),
 		IdleTimeoutSeconds: idleTimeout,
+		StartupFailures:    0,
+		Backoff:            0,
 	}
 	workerMutex.Unlock()
 
@@ -114,20 +137,29 @@ func StartWorkerForApp(appID string) (string, error) {
 		Image: appConfig.DockerImage,
 		Env: []string{
 			fmt.Sprintf("REDIS_HOST=%s", "redis"),
-			fmt.Sprintf("POSTGRES_HOST=%s", "postgres"),
-			fmt.Sprintf("POSTGRES_USER=%s", "admin"),
-			fmt.Sprintf("POSTGRES_PASSWORD=%s", "password123"),
-			fmt.Sprintf("POSTGRES_DB=%s", "orchestrator_db"),
+			fmt.Sprintf("REDIS_PORT=%s", "6379"),
+			fmt.Sprintf("POSTGRES_HOST=%s", getEnv("POSTGRES_HOST", "postgres")),
+			fmt.Sprintf("POSTGRES_USER=%s", getEnv("POSTGRES_USER", "postgres")),
+			fmt.Sprintf("POSTGRES_PASSWORD=%s", getEnv("POSTGRES_PASSWORD", "postgres")),
+			fmt.Sprintf("POSTGRES_DB=%s", getEnv("POSTGRES_DB", "gpu_orchestrator")),
 			fmt.Sprintf("ETCD_HOST=%s", "etcd"),
+			fmt.Sprintf("ETCD_PORT=%s", "2379"),
 			fmt.Sprintf("WORKER_ID=%s", workerID),
 			fmt.Sprintf("APP_ID=%s", appID),
 			fmt.Sprintf("QUEUE_NAME=%s", appConfig.Queue),
+			fmt.Sprintf("HF_TOKEN=%s", getEnv("HF_TOKEN", "")),
+		},
+		Volumes: map[string]struct{}{
+			"/models": {},
 		},
 	}
 
 	// Host configuration with GPU support
 	hostConfig := &container.HostConfig{
-		NetworkMode: "backend_default", // Use the network from docker-compose
+		NetworkMode: "backend_backend-network",
+		Binds: []string{
+			fmt.Sprintf("%s_models:/models", workerID),
+		},
 		Resources: container.Resources{
 			DeviceRequests: []container.DeviceRequest{
 				{
@@ -182,7 +214,36 @@ func StartWorkerForApp(appID string) (string, error) {
 	go func() {
 		if err := waitForWorkerReady(workerID, startupTimeout); err != nil {
 			log.Printf("[WORKER_MANAGER] Worker %s failed to start: %v", workerID, err)
+
+			// Increment failure counter and calculate backoff
+			workerMutex.Lock()
+			if worker := workers[workerID]; worker != nil {
+				worker.StartupFailures++
+				worker.LastFailureTime = time.Now()
+				// Exponential backoff: 30s, 1m, 2m, 4m, 5m (max)
+				worker.Backoff = time.Duration(30*worker.StartupFailures) * time.Second
+				if worker.Backoff > workerMaxBackoff {
+					worker.Backoff = workerMaxBackoff
+				}
+				log.Printf("[WORKER_MANAGER] Worker %s failure count: %d, backoff: %v",
+					workerID, worker.StartupFailures, worker.Backoff)
+
+				if worker.StartupFailures >= workerFailureThreshold {
+					log.Printf("[WORKER_MANAGER] ⚠️  Worker %s hit circuit breaker threshold! Will not auto-restart for %v",
+						workerID, worker.Backoff)
+				}
+			}
+			workerMutex.Unlock()
+
 			StopWorker(workerID)
+		} else {
+			// Success - reset failure counter
+			workerMutex.Lock()
+			if worker := workers[workerID]; worker != nil {
+				worker.StartupFailures = 0
+				worker.Backoff = 0
+			}
+			workerMutex.Unlock()
 		}
 	}()
 

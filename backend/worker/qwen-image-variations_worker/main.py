@@ -1,6 +1,6 @@
 """
-Qwen Image 2512 Worker
-Isolated worker for Qwen image generation jobs
+Qwen Image Variations Worker
+Isolated worker that generates random variations of a person's image using Qwen-Image-Edit
 """
 
 import os
@@ -14,19 +14,16 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import json
 
-# Setup paths
 sys.path.append('/app')
 from shared import worker_pb2
 from shared.gpu_metrics_collector import GPUMetricsCollector
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
@@ -36,23 +33,21 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "gpu_orchestrator")
 ETCD_HOST = os.getenv("ETCD_HOST", "localhost")
 ETCD_PORT = int(os.getenv("ETCD_PORT", "2379"))
 
-STREAM_KEY = "jobs:qwen-image-2512"
-GROUP_NAME = "qwen-workers"
-WORKER_ID = os.getenv("WORKER_ID", "qwen-worker-1")
+STREAM_KEY = "jobs:qwen-image-variations"
+GROUP_NAME = "qwen-image-variations-workers"
+WORKER_ID = os.getenv("WORKER_ID", "qwen-image-variations-worker-1")
 
-# Import handler
-from handler import generate_image
+from handler import QwenImageVariationsHandler
 
-# HTTP Request Handler for cleanup endpoint
+# Handler will be initialized after Redis connection
+handler = None
+
+
 class CleanupHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/cleanup':
             try:
-                import torch
-                import gc
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                handler.offload_model()
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
@@ -116,11 +111,9 @@ def register_worker_etcd():
     try:
         etcd = etcd_client(host=ETCD_HOST, port=ETCD_PORT)
         key = f"/workers/{WORKER_ID}"
-
         lease = etcd.lease(10)
-        worker_info = f"app=qwen-image-2512,queue=jobs:qwen-image-2512,status=ONLINE"
+        worker_info = f"app=qwen-image-variations,queue=jobs:qwen-image-variations,status=ONLINE"
         etcd.put(key, worker_info, lease=lease)
-
         logger.info(f"[SUCCESS] Worker {WORKER_ID} registered in etcd")
         return lease
     except Exception as e:
@@ -133,8 +126,38 @@ def keep_alive_etcd(lease):
     if lease:
         try:
             lease.refresh()
+            logger.debug(f"[HEARTBEAT] etcd lease refreshed successfully")
         except Exception as e:
-            logger.error(f"Failed to refresh etcd lease: {e}")
+            logger.error(f"[HEARTBEAT] Failed to refresh etcd lease: {e}")
+            logger.error(f"[HEARTBEAT] Worker will appear OFFLINE to orchestrator!")
+
+
+def start_heartbeat_thread(lease):
+    """Start background thread that keeps etcd lease alive."""
+    consecutive_failures = 0
+    max_failures = 3
+
+    def heartbeat_loop():
+        nonlocal consecutive_failures
+        while True:
+            try:
+                keep_alive_etcd(lease)
+                consecutive_failures = 0  # Reset on success
+            except Exception as e:
+                consecutive_failures += 1
+                logger.error(f"[HEARTBEAT] Error ({consecutive_failures}/{max_failures}): {e}")
+
+                if consecutive_failures >= max_failures:
+                    logger.critical(f"[HEARTBEAT] Failed {max_failures} times - worker may be considered offline!")
+                    logger.critical("[HEARTBEAT] Check etcd connectivity and restart worker if necessary")
+                    # Don't exit - keep trying to reconnect
+
+            time.sleep(3)  # Refresh every 3 seconds (well under 10s TTL)
+    
+    thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    thread.start()
+    logger.info("[HEARTBEAT] Background etcd heartbeat thread started")
+    return thread
 
 
 def mark_worker_active(redis_client):
@@ -160,8 +183,8 @@ def process_job(payload, redis_client):
 
         mark_worker_active(redis_client)
 
-        if job.app_id != "qwen-image-2512":
-            error_msg = f"Worker for qwen-image-2512 received job for {job.app_id}"
+        if job.app_id != "qwen-image-variations":
+            error_msg = f"Worker for qwen-image-variations received job for {job.app_id}"
             logger.error(error_msg)
             update_job_status(job.job_id, "FAILED", error=error_msg)
             return
@@ -169,23 +192,14 @@ def process_job(payload, redis_client):
         update_job_status(job.job_id, "PROCESSING")
 
         params = dict(job.params)
+        result = handler.process(job.job_id, params)
 
-        try:
-            result = generate_image(
-                prompt=params.get("prompt", ""),
-                negative_prompt=params.get("negative_prompt", ""),
-                width=int(params.get("width", 1024)),
-                height=int(params.get("height", 1024)),
-                num_inference_steps=int(params.get("num_inference_steps", 30)),
-                guidance_scale=float(params.get("guidance_scale", 7.5)),
-                seed=int(params.get("seed", -1)) if params.get("seed") else -1
-            )
-            
+        if result.get("success"):
             logger.info(f"[SUCCESS] Job {job.job_id} completed successfully")
-            update_job_status(job.job_id, "COMPLETED", output={"image_base64": result})
-        except Exception as e:
-            logger.error(f"[ERROR] Job {job.job_id} failed: {str(e)}")
-            update_job_status(job.job_id, "FAILED", error=str(e))
+            update_job_status(job.job_id, "COMPLETED", output=result.get("output"))
+        else:
+            logger.error(f"[ERROR] Job {job.job_id} failed: {result.get('error')}")
+            update_job_status(job.job_id, "FAILED", error=result.get("error"))
 
     except Exception as e:
         logger.error(f"Error processing job: {e}", exc_info=True)
@@ -204,32 +218,64 @@ def start_http_server():
     server.serve_forever()
 
 
+def check_model_availability():
+    """Check if model files are available before starting worker."""
+    import os
+    model_path = "/models/hub/models--Qwen--Qwen-Image-Edit"
+
+    if not os.path.exists(model_path):
+        logger.warning(f"[PREFLIGHT] Model directory not found: {model_path}")
+        logger.warning("[PREFLIGHT] Model will be downloaded on first job (~20GB)")
+        return True
+
+    # Check for incomplete downloads
+    incomplete_files = []
+    for root, dirs, files in os.walk(model_path):
+        for file in files:
+            if file.endswith('.incomplete'):
+                incomplete_files.append(os.path.join(root, file))
+
+    if incomplete_files:
+        logger.error(f"[PREFLIGHT] Found {len(incomplete_files)} incomplete model files!")
+        logger.error("[PREFLIGHT] Model download was interrupted. Worker will fail on job processing.")
+        logger.error("[PREFLIGHT] Fix: docker volume rm backend_qwen_models && restart container")
+        # Don't block startup, but log the warning
+        return False
+
+    logger.info("[PREFLIGHT] Model files check passed")
+    return True
+
+
 def main():
     """Main worker loop."""
-    logger.info(f"[STARTUP] Starting Qwen Image 2512 Worker")
+    logger.info(f"[STARTUP] Starting Qwen Image Variations Worker")
     logger.info(f"Worker ID: {WORKER_ID}")
     logger.info(f"Queue: {STREAM_KEY}")
-    logger.info(f"App ID: qwen-image-2512")
+    logger.info(f"App ID: qwen-image-variations")
 
-    # Start GPU metrics collector
+    # Pre-flight check for model files
+    check_model_availability()
+
     metrics_collector = GPUMetricsCollector(worker_id=WORKER_ID, interval_seconds=5)
     metrics_collector.start()
     logger.info("[SUCCESS] GPU metrics collector started")
 
-    # Start HTTP server in background thread
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
 
-    # Connect to Redis
     try:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=False)
         r.ping()
         logger.info("[SUCCESS] Connected to Redis")
+
+        # Initialize handler with Redis client for GPU lock coordination
+        global handler
+        handler = QwenImageVariationsHandler(redis_client=r, worker_id=WORKER_ID)
+        logger.info("[SUCCESS] Handler initialized with GPU lock coordination")
     except Exception as e:
         logger.error(f"[ERROR] Failed to connect to Redis: {e}")
         sys.exit(1)
 
-    # Create consumer group
     try:
         r.xgroup_create(STREAM_KEY, GROUP_NAME, id="0", mkstream=True)
         logger.info(f"[SUCCESS] Created consumer group: {GROUP_NAME}")
@@ -239,14 +285,14 @@ def main():
         else:
             logger.error(f"Error creating consumer group: {e}")
 
-    # Register in etcd
     lease = register_worker_etcd()
+    
+    # Start background heartbeat thread to keep lease alive during long operations
+    if lease:
+        start_heartbeat_thread(lease)
 
-    # Main loop
     logger.info(f"[LISTENING] Listening for jobs on '{STREAM_KEY}'...")
-    last_heartbeat = time.time()
 
-    # Check for pending messages
     logger.info("[STARTUP] Checking for pending messages from previous instances...")
     try:
         pending = r.xpending_range(STREAM_KEY, GROUP_NAME, "-", "+", 10)
@@ -259,10 +305,14 @@ def main():
                     for claimed_msg in claimed:
                         msg_id, fields = claimed_msg
                         logger.info(f"[STARTUP] Processing claimed pending message {msg_id}")
-                        process_job(fields[b'payload'], r)
-                        r.xack(STREAM_KEY, GROUP_NAME, msg_id)
-                        r.xdel(STREAM_KEY, msg_id)
-                        logger.info(f"[CLEANUP] Removed claimed message {msg_id} from stream")
+                        try:
+                            process_job(fields[b'payload'], r)
+                        except Exception as e:
+                            logger.error(f"[STARTUP] Failed to process pending message {msg_id}: {e}")
+                        finally:
+                            r.xack(STREAM_KEY, GROUP_NAME, msg_id)
+                            r.xdel(STREAM_KEY, msg_id)
+                            logger.info(f"[CLEANUP] Removed claimed message {msg_id} from stream")
     except Exception as e:
         logger.warning(f"[STARTUP] Error processing pending messages: {e}")
 
@@ -270,10 +320,6 @@ def main():
 
     while True:
         try:
-            if time.time() - last_heartbeat > 5:
-                keep_alive_etcd(lease)
-                last_heartbeat = time.time()
-
             entries = r.xreadgroup(
                 GROUP_NAME,
                 WORKER_ID,
@@ -285,10 +331,14 @@ def main():
             if entries:
                 for stream, messages in entries:
                     for message_id, fields in messages:
-                        process_job(fields[b'payload'], r)
-                        r.xack(STREAM_KEY, GROUP_NAME, message_id)
-                        r.xdel(STREAM_KEY, message_id)
-                        logger.info(f"[CLEANUP] Removed message {message_id} from stream")
+                        try:
+                            process_job(fields[b'payload'], r)
+                        except Exception as e:
+                            logger.error(f"[ERROR] Failed to process message {message_id}: {e}")
+                        finally:
+                            r.xack(STREAM_KEY, GROUP_NAME, message_id)
+                            r.xdel(STREAM_KEY, message_id)
+                            logger.info(f"[CLEANUP] Removed message {message_id} from stream")
 
         except KeyboardInterrupt:
             logger.info("Shutting down worker...")

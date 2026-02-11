@@ -745,7 +745,7 @@ func getWorkerNameForApp(appID string) string {
 	mapping := map[string]string{
 		"sdxl-image-gen":   "sdxl-worker",
 		"z-image":          "z-image-worker",
-		"qwen-image-2512":  "qwen-worker",
+		"qwen-image-edit":  "qwen-image-edit-worker",
 	}
 	return mapping[appID]
 }
@@ -977,9 +977,9 @@ func monitorStreams() {
 				continue
 			}
 
-			// Check if worker exists
+			// Check if worker exists and is healthy
 			worker := GetWorkerForApp(appID)
-			if worker == nil {
+			if worker == nil || worker.State == WorkerStateAbsent {
 				// Try to start worker
 				isAvailable, err := IsGPUAvailable()
 				if err != nil {
@@ -989,7 +989,17 @@ func monitorStreams() {
 
 				if isAvailable {
 					log.Printf("[STREAM MONITOR] Starting worker for app %s (queue: %s, pending: %d)", appID, queueName, length)
-					go StartWorkerForApp(appID)
+					go func(id string) {
+						if _, err := StartWorkerForApp(id); err != nil {
+							if strings.Contains(err.Error(), "circuit breaker") {
+								log.Printf("[STREAM MONITOR] ⚠️  Worker %s in circuit breaker, skipping restart", id)
+								// Mark pending jobs as failed after circuit breaker threshold
+								markPendingJobsAsFailed(queueName, "Worker in circuit breaker - check logs for errors")
+							} else {
+								log.Printf("[STREAM MONITOR] Failed to start worker for app %s: %v", id, err)
+							}
+						}
+					}(appID)
 				} else {
 					log.Printf("[STREAM MONITOR] GPU busy, job queued for app %s (pending: %d)", appID, length)
 				}
@@ -1066,4 +1076,49 @@ func getAppIDForQueue(queueName string) string {
 		}
 	}
 	return ""
+}
+
+// markPendingJobsAsFailed marks all pending jobs in a queue as failed
+func markPendingJobsAsFailed(queueName, errorMsg string) {
+	appID := getAppIDForQueue(queueName)
+	if appID == "" {
+		return
+	}
+
+	// Get all jobs in PENDING or QUEUED state for this app
+	rows, err := db.Query(`
+		SELECT id FROM jobs
+		WHERE app_id = $1 AND status IN ('PENDING', 'QUEUED')
+		ORDER BY created_at ASC
+	`, appID)
+
+	if err != nil {
+		log.Printf("[ERROR] Failed to query pending jobs: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var jobID string
+		if err := rows.Scan(&jobID); err != nil {
+			continue
+		}
+
+		_, err = db.Exec(`
+			UPDATE jobs
+			SET status = 'FAILED',
+			    error_log = $1,
+			    completed_at = NOW()
+			WHERE id = $2
+		`, errorMsg, jobID)
+
+		if err == nil {
+			count++
+		}
+	}
+
+	if count > 0 {
+		log.Printf("[CIRCUIT BREAKER] Marked %d pending jobs as FAILED for app %s", count, appID)
+	}
 }

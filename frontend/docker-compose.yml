@@ -13,6 +13,7 @@ services:
       - "8080:8888"
     environment:
       - ORCHESTRATOR_URL=http://172.17.0.1:9090
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost}
     networks:
       - frontend-network
     restart: unless-stopped
@@ -60,25 +61,6 @@ services:
       retries: 3
       start_period: 10s
 
-  qwen-ui:
-    build:
-      context: ./qwen-ui
-      dockerfile: Dockerfile
-    container_name: qwen-ui
-    ports:
-      - "7863:7863"
-    environment:
-      - ORCHESTRATOR_URL=http://172.17.0.1:9090
-    networks:
-      - frontend-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7863/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
   admin-dashboard:
     build:
       context: ./admin-dashboard
@@ -93,6 +75,44 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  qwen-image-edit-ui:
+    build:
+      context: ./qwen-image-edit-ui
+      dockerfile: Dockerfile
+    container_name: qwen-image-edit-ui
+    ports:
+      - "7865:7865"
+    environment:
+      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7865/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  qwen-image-variations-ui:
+    build:
+      context: ./qwen-image-variations-ui
+      dockerfile: Dockerfile
+    container_name: qwen-image-variations-ui
+    ports:
+      - "7866:7866"
+    environment:
+      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7866/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

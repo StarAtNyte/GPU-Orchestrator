@@ -263,10 +263,14 @@ def main():
                     for claimed_msg in claimed:
                         msg_id, fields = claimed_msg
                         logger.info(f"[STARTUP] Processing claimed pending message {msg_id}")
-                        process_job(fields[b'payload'], r)
-                        r.xack(STREAM_KEY, GROUP_NAME, msg_id)
-                        r.xdel(STREAM_KEY, msg_id)
-                        logger.info(f"[CLEANUP] Removed claimed message {msg_id} from stream")
+                        try:
+                            process_job(fields[b'payload'], r)
+                        except Exception as e:
+                            logger.error(f"[STARTUP] Failed to process pending message {msg_id}: {e}")
+                        finally:
+                            r.xack(STREAM_KEY, GROUP_NAME, msg_id)
+                            r.xdel(STREAM_KEY, msg_id)
+                            logger.info(f"[CLEANUP] Removed claimed message {msg_id} from stream")
     except Exception as e:
         logger.warning(f"[STARTUP] Error processing pending messages: {e}")
 
@@ -291,13 +295,14 @@ def main():
             if entries:
                 for stream, messages in entries:
                     for message_id, fields in messages:
-                        # Process job
-                        process_job(fields[b'payload'], r)
-
-                        # Acknowledge and delete message from stream
-                        r.xack(STREAM_KEY, GROUP_NAME, message_id)
-                        r.xdel(STREAM_KEY, message_id)
-                        logger.info(f"[CLEANUP] Removed message {message_id} from stream")
+                        try:
+                            process_job(fields[b'payload'], r)
+                        except Exception as e:
+                            logger.error(f"[ERROR] Failed to process message {message_id}: {e}")
+                        finally:
+                            r.xack(STREAM_KEY, GROUP_NAME, message_id)
+                            r.xdel(STREAM_KEY, message_id)
+                            logger.info(f"[CLEANUP] Removed message {message_id} from stream")
 
         except KeyboardInterrupt:
             logger.info("Shutting down worker...")

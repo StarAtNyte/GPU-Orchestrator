@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import requests
+import asyncio
 import os
 import json
 from typing import Optional
@@ -20,12 +21,15 @@ templates = Jinja2Templates(directory="templates")
 
 # Configuration
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://192.168.50.28:8080")
+# Base URL for frontend services (e.g., "http://192.168.1.100" or "https://myserver.local")
+# If not set, falls back to localhost (only works for local access)
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost")
 
 # Service registry (frontend services)
 FRONTEND_SERVICES = {
     "sdxl": {
         "name": "SDXL Image Generator",
-        "url": "http://localhost:7861",
+        "url": f"{FRONTEND_BASE_URL}:7861",
         "container_name": "sdxl-ui",
         "port": 7861,
         "icon": "🎨",
@@ -34,7 +38,7 @@ FRONTEND_SERVICES = {
     },
     "z-image": {
         "name": "Z-Image Generator",
-        "url": "http://localhost:7862",
+        "url": f"{FRONTEND_BASE_URL}:7862",
         "container_name": "z-image-ui",
         "port": 7862,
         "icon": "🖼️",
@@ -42,32 +46,23 @@ FRONTEND_SERVICES = {
         "app_id": "z-image"
     },
     "qwen": {
-        "name": "Qwen Image 2512 Fast",
-        "url": "http://localhost:7863",
-        "container_name": "qwen-ui",
-        "port": 7863,
+        "name": "Qwen Image Edit",
+        "url": f"{FRONTEND_BASE_URL}:7865",
+        "container_name": "qwen-image-edit-ui",
+        "port": 7865,
         "icon": "⚡",
-        "description": "Ultra-fast image generation with Qwen",
-        "app_id": "qwen-image-2512"
+        "description": "Edit images using Qwen-Image-Edit with LoRA Lightning",
+        "app_id": "qwen-image-edit"
     },
-    "whisper": {
-        "name": "Whisper Speech-to-Text",
-        "url": "http://localhost:7864",
-        "container_name": "whisper-ui",
-        "port": 7864,
-        "icon": "🎤",
-        "description": "Convert speech to text with Whisper",
-        "app_id": "whisper-stt"
+    "qwen-variations": {
+        "name": "Qwen Image Variations",
+        "url": f"{FRONTEND_BASE_URL}:7866",
+        "container_name": "qwen-image-variations-ui",
+        "port": 7866,
+        "icon": "🎨",
+        "description": "Generate random photo variations of a person",
+        "app_id": "qwen-image-variations"
     },
-    "admin": {
-        "name": "Admin Dashboard",
-        "url": "http://localhost:8000",
-        "container_name": "admin-dashboard",
-        "port": 8000,
-        "icon": "⚙️",
-        "description": "Monitor jobs, workers, and system metrics",
-        "app_id": None
-    }
 }
 
 
@@ -98,31 +93,42 @@ async def health():
     }
 
 
+async def check_service_health(container_name: str, port: int) -> str:
+    """Check a single service's health with a hard timeout."""
+    def _check():
+        try:
+            r = requests.get(f"http://{container_name}:{port}/health", timeout=2)
+            return "online" if r.status_code == 200 else "offline"
+        except Exception:
+            return "offline"
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_check), timeout=3.0)
+    except Exception:
+        return "offline"
+
+
 @app.get("/api/services")
 async def get_services():
     """Get all available services and their status."""
-    services = []
+    keys = list(FRONTEND_SERVICES.keys())
+    infos = list(FRONTEND_SERVICES.values())
 
-    for service_key, service_info in FRONTEND_SERVICES.items():
-        try:
-            # Health check from inside container - use container name on Docker network
-            health_url = f"http://{service_info['container_name']}:{service_info['port']}/health"
-            response = requests.get(health_url, timeout=3)
-            status = "online" if response.status_code == 200 else "offline"
-        except Exception as e:
-            status = "offline"
+    statuses = await asyncio.gather(*[
+        check_service_health(s["container_name"], s["port"]) for s in infos
+    ])
 
-        services.append({
-            "key": service_key,
-            "name": service_info["name"],
-            "url": service_info["url"],  # Keep localhost URL for browser
-            "icon": service_info["icon"],
-            "description": service_info["description"],
+    return {"services": [
+        {
+            "key": key,
+            "name": info["name"],
+            "url": info["url"],
+            "icon": info["icon"],
+            "description": info["description"],
             "status": status,
-            "app_id": service_info["app_id"]
-        })
-
-    return {"services": services}
+            "app_id": info["app_id"]
+        }
+        for key, info, status in zip(keys, infos, statuses)
+    ]}
 
 
 @app.get("/api/gpu/health")

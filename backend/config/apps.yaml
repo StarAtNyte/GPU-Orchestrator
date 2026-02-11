@@ -6,7 +6,7 @@ apps:
     queue: "jobs:sdxl"
     description: "Generate high-quality images using Stable Diffusion XL"
     gpu_vram_gb: 12
-    docker_image: "ghcr.io/myorg/sdxl-worker:latest"
+    docker_image: "backend-sdxl-worker:latest"
     container_name: "sdxl-worker"
     idle_timeout_seconds: 300
     startup_timeout_seconds: 120
@@ -34,7 +34,7 @@ apps:
     queue: "jobs:z-image"
     description: "Fast image generation with Z-Image Turbo (single-stream diffusion transformer)"
     gpu_vram_gb: 16
-    docker_image: "gpu-orchestrator-z-image-worker:latest"
+    docker_image: "backend-z-image-worker:latest"
     container_name: "z-image-worker"
     idle_timeout_seconds: 300
     startup_timeout_seconds: 120
@@ -60,37 +60,61 @@ apps:
         required: false
         description: "Time shift parameter (1.0-10.0)"
 
-  - id: "qwen-image-2512"
-    name: "Qwen Image Generator"
+  - id: "qwen-image-edit"
+    name: "Qwen Image Edit"
     type: "local"
-    queue: "jobs:qwen-image-2512"
-    description: "Image generation using Qwen vision-language model"
-    gpu_vram_gb: 8
-    docker_image: "gpu-orchestrator-qwen-worker:latest"
-    container_name: "qwen-worker"
+    queue: "jobs:qwen-image-edit"
+    description: "Edit images using Qwen-Image-Edit with 4-bit quantization and LoRA Lightning (~14s inference)"
+    gpu_vram_gb: 12
+    docker_image: "backend-qwen-image-edit-worker:latest"
+    container_name: "qwen-image-edit-worker"
     idle_timeout_seconds: 300
-    startup_timeout_seconds: 120
+    startup_timeout_seconds: 180
     parameters:
       - name: "prompt"
         type: "string"
         required: true
-        description: "Text description (Chinese or English)"
-      - name: "resolution"
+        description: "Edit instruction (e.g., 'change rhino into tiger')"
+      - name: "image_base64"
+        type: "string"
+        required: true
+        description: "Base64 encoded input image"
+      - name: "negative_prompt"
         type: "string"
         required: false
-        description: "Image resolution (1024x1024, 576x1024, 896x1200)"
-      - name: "seed"
-        type: "string"
-        required: false
-        description: "Random seed for reproducibility"
+        description: "Things to avoid in the output"
       - name: "steps"
         type: "string"
         required: false
-        description: "Inference steps (20-100)"
-      - name: "shift"
+        description: "Inference steps (default: 4 with Lightning LoRA)"
+      - name: "cfg_scale"
         type: "string"
         required: false
-        description: "Time shift parameter (1.0-10.0)"
+        description: "CFG scale (default: 1.0)"
+
+  - id: "qwen-image-variations"
+    name: "Qwen Image Variations"
+    type: "local"
+    queue: "jobs:qwen-image-variations"
+    description: "Generate random variations of a person's image using Qwen-Image-Edit with curated prompts"
+    gpu_vram_gb: 12
+    docker_image: "backend-qwen-image-variations-worker:latest"
+    container_name: "qwen-image-variations-worker"
+    idle_timeout_seconds: 300
+    startup_timeout_seconds: 180
+    parameters:
+      - name: "image_base64"
+        type: "string"
+        required: true
+        description: "Base64 encoded input image of a person"
+      - name: "steps"
+        type: "string"
+        required: false
+        description: "Inference steps (default: 4 with Lightning LoRA)"
+      - name: "cfg_scale"
+        type: "string"
+        required: false
+        description: "CFG scale (default: 1.0)"
 
   # Cloud/Modal Apps
   - id: "panorama-processor"

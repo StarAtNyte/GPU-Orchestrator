@@ -126,7 +126,7 @@
                             <option value="">All Services</option>
                             <option value="sdxl-image-gen">SDXL Image Gen</option>
                             <option value="z-image">Z-Image</option>
-                            <option value="qwen-image-2512">Qwen Image 2512</option>
+                            <option value="qwen-image-edit">Qwen Image Edit</option>
                         </select>
                     </div>
                     <div>
@@ -223,7 +223,7 @@
             const names = {
                 'sdxl-image-gen': 'SDXL',
                 'z-image': 'Z-Image',
-                'qwen-image-2512': 'Qwen 2512'
+                'qwen-image-edit': 'Qwen Edit'
             };
             return names[appId] || appId;
         }
@@ -233,7 +233,7 @@
             const icons = {
                 'sdxl-image-gen': '🎨',
                 'z-image': '🖼️',
-                'qwen-image-2512': '⚡'
+                'qwen-image-edit': '⚡'
             };
             return icons[appId] || '📦';
         }

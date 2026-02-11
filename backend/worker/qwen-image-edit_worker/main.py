@@ -1,6 +1,6 @@
 """
-Zz Iimage Worker
-Isolated worker for z-image jobs
+Qwen Image Edit Worker
+Isolated worker for image editing jobs using Qwen-Image-Edit
 """
 
 import os
@@ -14,19 +14,16 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import json
 
-# Setup paths
 sys.path.append('/app')
 from shared import worker_pb2
 from shared.gpu_metrics_collector import GPUMetricsCollector
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
@@ -36,17 +33,16 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "gpu_orchestrator")
 ETCD_HOST = os.getenv("ETCD_HOST", "localhost")
 ETCD_PORT = int(os.getenv("ETCD_PORT", "2379"))
 
-STREAM_KEY = "jobs:z-image"
-GROUP_NAME = "z-image-workers"
-WORKER_ID = os.getenv("WORKER_ID", "z-image-worker-1")
+STREAM_KEY = "jobs:qwen-image-edit"
+GROUP_NAME = "qwen-image-edit-workers"
+WORKER_ID = os.getenv("WORKER_ID", "qwen-image-edit-worker-1")
 
-# Import handler
-from handler import ZImageHandler
+from handler import QwenImageEditHandler
 
-# Global handler instance
-handler = ZImageHandler()
+# Handler will be initialized after Redis connection
+handler = None
 
-# HTTP Request Handler for cleanup endpoint
+
 class CleanupHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/cleanup':
@@ -67,7 +63,6 @@ class CleanupHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def log_message(self, format, *args):
-        # Suppress default HTTP logging
         pass
 
 
@@ -117,14 +112,9 @@ def register_worker_etcd():
     try:
         etcd = etcd_client(host=ETCD_HOST, port=ETCD_PORT)
         key = f"/workers/{WORKER_ID}"
-
-        # Create lease with 10 second TTL
         lease = etcd.lease(10)
-
-        # Put worker info with lease
-        worker_info = f"app=z-image,queue=jobs:z-image,status=ONLINE"
+        worker_info = f"app=qwen-image-edit,queue=jobs:qwen-image-edit,status=ONLINE"
         etcd.put(key, worker_info, lease=lease)
-
         logger.info(f"[SUCCESS] Worker {WORKER_ID} registered in etcd")
         return lease
     except Exception as e:
@@ -147,7 +137,7 @@ def mark_worker_active(redis_client):
         from datetime import datetime
         redis_client.setex(
             f"worker:{WORKER_ID}:last_active",
-            120,  # Expires in 2 minutes
+            120,
             datetime.utcnow().isoformat()
         )
     except Exception as e:
@@ -157,32 +147,24 @@ def mark_worker_active(redis_client):
 def process_job(payload, redis_client):
     """Process a single job."""
     try:
-        # Parse protobuf
         job = worker_pb2.JobRequest()
         job.ParseFromString(payload)
 
         logger.info(f"[PROCESSING] Processing job {job.job_id} for app {job.app_id}")
 
-        # Mark worker as busy
         mark_worker_active(redis_client)
 
-        # Validate app_id
-        if job.app_id != "z-image":
-            error_msg = f"Worker for z-image received job for {job.app_id}"
+        if job.app_id != "qwen-image-edit":
+            error_msg = f"Worker for qwen-image-edit received job for {job.app_id}"
             logger.error(error_msg)
             update_job_status(job.job_id, "FAILED", error=error_msg)
             return
 
-        # Update status to PROCESSING
         update_job_status(job.job_id, "PROCESSING")
 
-        # Convert params to dict
         params = dict(job.params)
-
-        # Process with handler
         result = handler.process(job.job_id, params)
 
-        # Update based on result
         if result.get("success"):
             logger.info(f"[SUCCESS] Job {job.job_id} completed successfully")
             update_job_status(job.job_id, "COMPLETED", output=result.get("output"))
@@ -209,30 +191,31 @@ def start_http_server():
 
 def main():
     """Main worker loop."""
-    logger.info(f"[STARTUP] Starting Z-Image Worker")
+    logger.info(f"[STARTUP] Starting Qwen Image Edit Worker")
     logger.info(f"Worker ID: {WORKER_ID}")
     logger.info(f"Queue: {STREAM_KEY}")
-    logger.info(f"App ID: z-image")
+    logger.info(f"App ID: qwen-image-edit")
 
-    # Start GPU metrics collector
     metrics_collector = GPUMetricsCollector(worker_id=WORKER_ID, interval_seconds=5)
     metrics_collector.start()
     logger.info("[SUCCESS] GPU metrics collector started")
 
-    # Start HTTP server in background thread
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
 
-    # Connect to Redis
     try:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=False)
         r.ping()
         logger.info("[SUCCESS] Connected to Redis")
+
+        # Initialize handler with Redis client for GPU lock coordination
+        global handler
+        handler = QwenImageEditHandler(redis_client=r, worker_id=WORKER_ID)
+        logger.info("[SUCCESS] Handler initialized with GPU lock coordination")
     except Exception as e:
         logger.error(f"[ERROR] Failed to connect to Redis: {e}")
         sys.exit(1)
 
-    # Create consumer group
     try:
         r.xgroup_create(STREAM_KEY, GROUP_NAME, id="0", mkstream=True)
         logger.info(f"[SUCCESS] Created consumer group: {GROUP_NAME}")
@@ -242,14 +225,11 @@ def main():
         else:
             logger.error(f"Error creating consumer group: {e}")
 
-    # Register in etcd
     lease = register_worker_etcd()
 
-    # Main loop
     logger.info(f"[LISTENING] Listening for jobs on '{STREAM_KEY}'...")
     last_heartbeat = time.time()
 
-    # First, check for any pending messages from previous worker instances
     logger.info("[STARTUP] Checking for pending messages from previous instances...")
     try:
         pending = r.xpending_range(STREAM_KEY, GROUP_NAME, "-", "+", 10)
@@ -257,7 +237,6 @@ def main():
             logger.info(f"[STARTUP] Found {len(pending)} pending message(s), claiming and processing...")
             for msg in pending:
                 message_id = msg['message_id']
-                # Claim the message with minimal idle time (0)
                 claimed = r.xclaim(STREAM_KEY, GROUP_NAME, WORKER_ID, min_idle_time=0, message_ids=[message_id])
                 if claimed:
                     for claimed_msg in claimed:
@@ -278,18 +257,16 @@ def main():
 
     while True:
         try:
-            # Keep etcd lease alive (every 5 seconds)
             if time.time() - last_heartbeat > 5:
                 keep_alive_etcd(lease)
                 last_heartbeat = time.time()
 
-            # Read from stream
             entries = r.xreadgroup(
                 GROUP_NAME,
                 WORKER_ID,
                 {STREAM_KEY: ">"},
                 count=1,
-                block=2000  # 2 second timeout
+                block=2000
             )
 
             if entries:

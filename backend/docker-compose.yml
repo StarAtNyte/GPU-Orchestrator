@@ -79,12 +79,14 @@ services:
       ETCD_ENDPOINT: etcd:2379
       APP_REGISTRY_PATH: /app/config/apps.yaml
       DOCKER_HOST: unix:///var/run/docker.sock
+      NVIDIA_VISIBLE_DEVICES: all
     ports:
       - "9090:8080"
     volumes:
       - ./config/apps.yaml:/app/config/apps.yaml
       - ../scripts:/app/scripts
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    runtime: nvidia
     deploy:
       resources:
         reservations:
@@ -196,11 +198,11 @@ services:
 #      - backend-network
 #    restart: unless-stopped
 
-  qwen-worker:
+  qwen-image-edit-worker:
     build:
       context: .
-      dockerfile: worker/qwen-image-2512_worker/Dockerfile
-    container_name: qwen-worker
+      dockerfile: worker/qwen-image-edit_worker/Dockerfile
+    container_name: qwen-image-edit-worker
     depends_on:
       - redis
       - postgres
@@ -212,13 +214,57 @@ services:
       REDIS_URL: redis://redis:6379
       POSTGRES_HOST: postgres
       POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
       ETCD_HOST: etcd
       ETCD_PORT: 2379
       ETCD_ENDPOINT: etcd:2379
-      WORKER_ID: qwen-worker
-      APP_ID: qwen-image-2512
+      WORKER_ID: qwen-image-edit-worker
+      APP_ID: qwen-image-edit
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /models
+      TRANSFORMERS_CACHE: /models
+    volumes:
+      - ${HOME}/models/qwen-image-edit:/models/hub/models--Qwen--Qwen-Image-Edit:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+  qwen-image-variations-worker:
+    build:
+      context: .
+      dockerfile: worker/qwen-image-variations_worker/Dockerfile
+    container_name: qwen-image-variations-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_HOST: etcd
+      ETCD_PORT: 2379
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: qwen-image-variations-worker
+      APP_ID: qwen-image-variations
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /models
+      TRANSFORMERS_CACHE: /models
+    volumes:
+      - ${HOME}/models/qwen-image-edit:/models/hub/models--Qwen--Qwen-Image-Edit:rw
     deploy:
       resources:
         reservations:
