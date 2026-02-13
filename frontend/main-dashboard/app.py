@@ -45,15 +45,6 @@ FRONTEND_SERVICES = {
         "description": "Generate images with Z-Image model",
         "app_id": "z-image"
     },
-    "qwen": {
-        "name": "Qwen Image Edit",
-        "url": f"{FRONTEND_BASE_URL}:7865",
-        "container_name": "qwen-image-edit-ui",
-        "port": 7865,
-        "icon": "⚡",
-        "description": "Edit images using Qwen-Image-Edit with LoRA Lightning",
-        "app_id": "qwen-image-edit"
-    },
     "qwen-variations": {
         "name": "Qwen Image Variations",
         "url": f"{FRONTEND_BASE_URL}:7866",
@@ -82,7 +73,7 @@ async def history_page(request: Request):
 async def health():
     """Health check endpoint."""
     try:
-        response = requests.get(f"{ORCHESTRATOR_URL}/workers", timeout=5)
+        response = requests.get(f"{ORCHESTRATOR_URL}/workers", timeout=(2, 5))
         orchestrator_healthy = response.status_code == 200
     except:
         orchestrator_healthy = False
@@ -97,7 +88,7 @@ async def check_service_health(container_name: str, port: int) -> str:
     """Check a single service's health with a hard timeout."""
     def _check():
         try:
-            r = requests.get(f"http://{container_name}:{port}/health", timeout=2)
+            r = requests.get(f"http://{container_name}:{port}/", timeout=(1, 2))
             return "online" if r.status_code == 200 else "offline"
         except Exception:
             return "offline"
@@ -137,7 +128,7 @@ async def gpu_health():
     try:
         response = requests.get(
             f"{ORCHESTRATOR_URL}/health/gpu",
-            timeout=5
+            timeout=(2, 5)
         )
         if response.status_code == 200:
             return response.json()

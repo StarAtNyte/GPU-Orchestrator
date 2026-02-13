@@ -127,8 +127,37 @@ def keep_alive_etcd(lease):
     if lease:
         try:
             lease.refresh()
+            logger.debug(f"[HEARTBEAT] etcd lease refreshed successfully")
         except Exception as e:
-            logger.error(f"Failed to refresh etcd lease: {e}")
+            logger.error(f"[HEARTBEAT] Failed to refresh etcd lease: {e}")
+            logger.error(f"[HEARTBEAT] Worker will appear OFFLINE to orchestrator!")
+
+
+def start_heartbeat_thread(lease):
+    """Start background thread that keeps etcd lease alive."""
+    consecutive_failures = 0
+    max_failures = 3
+
+    def heartbeat_loop():
+        nonlocal consecutive_failures
+        while True:
+            try:
+                keep_alive_etcd(lease)
+                consecutive_failures = 0
+            except Exception as e:
+                consecutive_failures += 1
+                logger.error(f"[HEARTBEAT] Error ({consecutive_failures}/{max_failures}): {e}")
+
+                if consecutive_failures >= max_failures:
+                    logger.critical(f"[HEARTBEAT] Failed {max_failures} times - worker may be considered offline!")
+                    logger.critical("[HEARTBEAT] Check etcd connectivity and restart worker if necessary")
+
+            time.sleep(3)
+
+    thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    thread.start()
+    logger.info("[HEARTBEAT] Background etcd heartbeat thread started")
+    return thread
 
 
 def mark_worker_active(redis_client):
@@ -226,9 +255,9 @@ def main():
             logger.error(f"Error creating consumer group: {e}")
 
     lease = register_worker_etcd()
+    start_heartbeat_thread(lease)
 
     logger.info(f"[LISTENING] Listening for jobs on '{STREAM_KEY}'...")
-    last_heartbeat = time.time()
 
     logger.info("[STARTUP] Checking for pending messages from previous instances...")
     try:
@@ -257,10 +286,6 @@ def main():
 
     while True:
         try:
-            if time.time() - last_heartbeat > 5:
-                keep_alive_etcd(lease)
-                last_heartbeat = time.time()
-
             entries = r.xreadgroup(
                 GROUP_NAME,
                 WORKER_ID,

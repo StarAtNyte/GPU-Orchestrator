@@ -33,7 +33,7 @@ class GPUOrchestratorHub {
 
     async loadGPUStatus() {
         try {
-            const response = await this.fetchWithTimeout('/api/gpu/health');
+            const response = await this.fetchWithTimeout('api/gpu/health');
             const data = await response.json();
 
             if (data.status === 'ok') {
@@ -59,7 +59,7 @@ class GPUOrchestratorHub {
 
     async loadServices() {
         try {
-            const response = await this.fetchWithTimeout('/api/services');
+            const response = await this.fetchWithTimeout('api/services');
             const data = await response.json();
             this.services = data.services;
             this.renderServices();

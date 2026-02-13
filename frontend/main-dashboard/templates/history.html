@@ -1,108 +1,70 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>History - GPU Orchestrator</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
-        rel="stylesheet" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <style>
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    </style>
     <script id="tailwind-config">
         tailwind.config = {
-            darkMode: "class",
             theme: {
                 extend: {
                     colors: {
-                        "primary": "#256af4",
-                        "background-light": "#f5f6f8",
-                        "background-dark": "#101622",
+                        "background": "#fafafa",
                     },
                     fontFamily: {
-                        "display": ["Space Grotesk", "sans-serif"]
-                    },
-                    borderRadius: {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
+                        "sans": ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"]
                     },
                 },
             },
         }
     </script>
     <style>
-        body {
-            font-family: "Space Grotesk", sans-serif;
-        }
-
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-
-        .job-card-hover:hover {
-            border-color: #256af4;
-            box-shadow: 0 0 15px rgba(37, 106, 244, 0.2);
-            transform: translateY(-2px);
-        }
-
-        .job-card-hover {
-            transition: all 0.3s ease;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .animate-spin-slow {
-            animation: spin 2s linear infinite;
-        }
+        .card-hover { transition: all 0.15s ease; }
+        .card-hover:hover { border-color: #ccc; background: #f5f5f5; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin-slow { animation: spin 2s linear infinite; }
     </style>
 </head>
 
-<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen flex flex-col">
+<body class="bg-[#fafafa] text-[#1a1a1a] min-h-screen flex flex-col">
     <!-- TopNavBar -->
-    <header
-        class="border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-background-dark/50 backdrop-blur-md sticky top-0 z-50">
+    <header class="border-b border-[#e0e0e0] bg-white sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <div class="text-primary">
-                    <span class="material-symbols-outlined text-3xl">developer_board</span>
-                </div>
-                <h1 class="text-xl font-bold tracking-tight">GPU Orchestrator</h1>
+                <h1 class="text-xl font-semibold tracking-tight">GPU Orchestrator</h1>
             </div>
             <div class="flex items-center gap-6">
-                <a href="/" class="flex items-center gap-2 text-slate-400 hover:text-primary transition-colors">
-                    <span class="material-symbols-outlined">home</span>
-                    <span class="text-sm font-medium">Home</span>
-                </a>
+                <a href="./" class="text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">Home</a>
                 <div id="usernameBadge"
-                    class="flex items-center gap-2 bg-primary/10 px-3 py-1.5 rounded-full border border-primary/20 cursor-pointer"
+                    class="flex items-center gap-2 bg-[#f0f0f0] px-3 py-1.5 rounded-full border border-[#e0e0e0] cursor-pointer"
                     onclick="changeUsername()">
-                    <span class="material-symbols-outlined text-primary text-sm">person</span>
-                    <span id="currentUsername" class="text-primary text-xs font-bold uppercase tracking-wider">Guest</span>
+                    <span class="material-symbols-outlined text-[#666] text-sm">person</span>
+                    <span id="currentUsername" class="text-[#666] text-xs font-semibold uppercase tracking-wider">Guest</span>
                 </div>
             </div>
         </div>
     </header>
 
     <!-- Username Modal -->
-    <div id="usernameModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-8 max-w-md w-full shadow-2xl">
-            <h3 class="text-2xl font-bold mb-4">Enter Your Username</h3>
-            <p class="text-slate-500 dark:text-slate-400 mb-6">Choose a username to track your submissions</p>
+    <div id="usernameModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white border border-[#e0e0e0] rounded-xl p-8 max-w-md w-full shadow-lg">
+            <h3 class="text-xl font-semibold mb-3">Enter Your Username</h3>
+            <p class="text-[#888] text-sm mb-6">Choose a username to track your submissions</p>
             <input
                 type="text"
                 id="usernameInput"
                 placeholder="Enter username"
-                class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary mb-4"
+                class="w-full px-4 py-3 bg-[#fafafa] border border-[#e0e0e0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1a1a1a] mb-4"
             />
             <button
                 onclick="saveUsername()"
-                class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                class="w-full bg-[#1a1a1a] hover:bg-[#333] text-white font-medium py-3 px-6 rounded-lg transition-colors"
             >
                 Save Username
             </button>
@@ -112,26 +74,26 @@
     <main class="flex-grow px-6 py-12">
         <!-- PageHeading -->
         <div class="text-center mb-12 max-w-2xl mx-auto">
-            <h2 class="text-4xl md:text-5xl font-black mb-4 tracking-tight">Your History</h2>
-            <p class="text-slate-500 dark:text-slate-400 text-lg">View all your past submissions and results</p>
+            <h2 class="text-4xl md:text-5xl font-bold mb-4 tracking-tight">Your History</h2>
+            <p class="text-[#666] text-lg">View all your past submissions and results.</p>
         </div>
 
         <!-- Filters -->
         <div class="max-w-7xl mx-auto mb-8">
-            <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <div class="bg-white border border-[#e0e0e0] rounded-xl p-6">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                        <label class="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2 block">Service</label>
-                        <select id="filterService" onchange="loadJobs()" class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+                        <label class="text-xs text-[#999] uppercase tracking-widest font-semibold mb-2 block">Service</label>
+                        <select id="filterService" onchange="loadJobs()" class="w-full px-4 py-2 bg-[#fafafa] border border-[#e0e0e0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1a1a1a] text-sm">
                             <option value="">All Services</option>
                             <option value="sdxl-image-gen">SDXL Image Gen</option>
                             <option value="z-image">Z-Image</option>
-                            <option value="qwen-image-edit">Qwen Image Edit</option>
+                            <option value="qwen-image-variations">Qwen Variations</option>
                         </select>
                     </div>
                     <div>
-                        <label class="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2 block">Status</label>
-                        <select id="filterStatus" onchange="loadJobs()" class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+                        <label class="text-xs text-[#999] uppercase tracking-widest font-semibold mb-2 block">Status</label>
+                        <select id="filterStatus" onchange="loadJobs()" class="w-full px-4 py-2 bg-[#fafafa] border border-[#e0e0e0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1a1a1a] text-sm">
                             <option value="">All Status</option>
                             <option value="COMPLETED">Completed</option>
                             <option value="PROCESSING">Processing</option>
@@ -140,8 +102,8 @@
                         </select>
                     </div>
                     <div class="flex items-end">
-                        <button onclick="loadJobs()" class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2">
-                            <span class="material-symbols-outlined">refresh</span>
+                        <button onclick="loadJobs()" class="w-full bg-[#1a1a1a] hover:bg-[#333] text-white font-medium py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm">
+                            <span class="material-symbols-outlined text-base">refresh</span>
                             <span>Refresh</span>
                         </button>
                     </div>
@@ -151,35 +113,28 @@
 
         <!-- Jobs Count -->
         <div class="max-w-7xl mx-auto mb-6">
-            <p class="text-slate-500 dark:text-slate-400">
-                <span id="jobCount" class="text-primary font-bold">0</span> submissions found
+            <p class="text-[#999] text-sm">
+                <span id="jobCount" class="text-[#1a1a1a] font-semibold">0</span> submissions found
             </p>
         </div>
 
         <!-- Jobs Grid -->
         <div class="max-w-7xl mx-auto">
-            <div id="jobsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div class="text-center text-slate-400 py-12 col-span-full">Loading your history...</div>
+            <div id="jobsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div class="text-center text-[#aaa] py-12 col-span-full">Loading your history...</div>
             </div>
         </div>
     </main>
 
     <!-- Footer -->
-    <footer
-        class="mt-auto border-t border-slate-200 dark:border-slate-800 bg-white/30 dark:bg-background-dark/30 backdrop-blur-sm py-8">
-        <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
-            <div class="flex items-center gap-8">
-                <a class="text-slate-400 hover:text-primary text-sm transition-colors" href="/">Home</a>
-                <a class="text-slate-400 hover:text-primary text-sm transition-colors" href="http://localhost:8000" target="_blank">Admin Console</a>
-            </div>
-            <div class="flex items-center gap-4">
-                <p class="text-slate-400 text-sm">© 2025 GPU Orchestrator</p>
-            </div>
+    <footer class="mt-auto border-t border-[#e0e0e0] bg-white py-6">
+        <div class="max-w-7xl mx-auto px-6 flex items-center justify-between">
+            <p class="text-[#aaa] text-sm">&copy; 2025 GPU Orchestrator</p>
+            <a class="text-[#aaa] hover:text-[#666] text-sm transition-colors" href="./">Home</a>
         </div>
     </footer>
 
     <script>
-        // Username management
         function getUsername() {
             return localStorage.getItem('gpu_orchestrator_username') || null;
         }
@@ -206,39 +161,39 @@
             }
         }
 
-        // Status badge helper
         function getStatusBadge(status) {
-            const badges = {
-                'COMPLETED': '<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-500/10 text-green-500 text-xs font-bold rounded-full border border-green-500/20"><span class="material-symbols-outlined text-xs">check_circle</span>Completed</span>',
-                'PROCESSING': '<span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/10 text-blue-500 text-xs font-bold rounded-full border border-blue-500/20"><span class="material-symbols-outlined text-xs animate-spin-slow">progress_activity</span>Processing</span>',
-                'QUEUED': '<span class="inline-flex items-center gap-1 px-2 py-1 bg-yellow-500/10 text-yellow-500 text-xs font-bold rounded-full border border-yellow-500/20"><span class="material-symbols-outlined text-xs">schedule</span>Queued</span>',
-                'FAILED': '<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-500/10 text-red-500 text-xs font-bold rounded-full border border-red-500/20"><span class="material-symbols-outlined text-xs">error</span>Failed</span>',
-                'PENDING': '<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-500/10 text-gray-500 text-xs font-bold rounded-full border border-gray-500/20"><span class="material-symbols-outlined text-xs">pending</span>Pending</span>'
+            const map = {
+                'COMPLETED':  { icon: 'check_circle',      color: '#22c55e' },
+                'PROCESSING': { icon: 'progress_activity',  color: '#3b82f6', spin: true },
+                'QUEUED':     { icon: 'schedule',           color: '#eab308' },
+                'FAILED':     { icon: 'error',              color: '#ef4444' },
+                'PENDING':    { icon: 'pending',            color: '#aaa' },
             };
-            return badges[status] || status;
+            const s = map[status] || { icon: 'help', color: '#aaa' };
+            const spinClass = s.spin ? ' animate-spin-slow' : '';
+            return `<span class="inline-flex items-center gap-1 text-xs font-medium" style="color:${s.color}">
+                <span class="material-symbols-outlined text-xs${spinClass}">${s.icon}</span>${status.charAt(0) + status.slice(1).toLowerCase()}
+            </span>`;
         }
 
-        // Service name helper
         function getServiceName(appId) {
             const names = {
                 'sdxl-image-gen': 'SDXL',
                 'z-image': 'Z-Image',
-                'qwen-image-edit': 'Qwen Edit'
+                'qwen-image-variations': 'Qwen Variations'
             };
             return names[appId] || appId;
         }
 
-        // Service icon helper
-        function getServiceIcon(appId) {
+        function getServiceMaterialIcon(appId) {
             const icons = {
-                'sdxl-image-gen': '🎨',
-                'z-image': '🖼️',
-                'qwen-image-edit': '⚡'
+                'sdxl-image-gen': 'image_search',
+                'z-image': 'blur_on',
+                'qwen-image-variations': 'image_search'
             };
-            return icons[appId] || '📦';
+            return icons[appId] || 'apps';
         }
 
-        // Format date
         function formatDate(dateString) {
             const date = new Date(dateString);
             const now = new Date();
@@ -255,7 +210,6 @@
             return date.toLocaleDateString();
         }
 
-        // Detect media type from base64 or explicit type
         function getMediaType(output) {
             if (output.media_type) return output.media_type;
             if (output.image || output.image_base64) return 'image';
@@ -265,30 +219,24 @@
             return 'unknown';
         }
 
-        // Get media data from output
         function getMediaData(output) {
-            return output.image || output.image_base64 || 
-                   output.video || output.video_base64 || 
+            return output.image || output.image_base64 ||
+                   output.video || output.video_base64 ||
                    output.audio || output.audio_base64 ||
                    (output.images && output.images[0]) || null;
         }
 
-        // Delete job
         async function deleteJob(jobId, event) {
             event.stopPropagation();
-
-            if (!confirm('Are you sure you want to remove this job from your history?')) {
-                return;
-            }
+            if (!confirm('Remove this job from your history?')) return;
 
             const username = getUsername();
             if (!username) return;
 
             try {
-                const response = await fetch(`/api/user/jobs/${jobId}?username=${encodeURIComponent(username)}`, {
+                const response = await fetch(`api/user/jobs/${jobId}?username=${encodeURIComponent(username)}`, {
                     method: 'DELETE'
                 });
-
                 if (response.ok) {
                     loadJobs();
                 } else {
@@ -301,12 +249,10 @@
             }
         }
 
-        // Render job card
         function renderJobCard(job) {
             const hasOutput = job.status === 'COMPLETED' && (job.output || job.result);
             let mediaPreview = '';
 
-            // Try to extract media from output or result
             if (hasOutput) {
                 const output = job.output || job.result;
                 const mediaType = getMediaType(output);
@@ -315,79 +261,68 @@
                 if (mediaData && mediaType === 'image') {
                     const imageSrc = mediaData.startsWith('data:') ? mediaData : `data:image/png;base64,${mediaData}`;
                     mediaPreview = `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 relative group">
+                        <div class="aspect-video w-full bg-[#f0f0f0] rounded-lg overflow-hidden mb-4 relative group">
                             <img src="${imageSrc}" alt="Generated image" class="w-full h-full object-cover" />
-                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
+                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-1.5 bg-white/80 hover:bg-white text-[#666] hover:text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all border border-[#e0e0e0]" title="Remove">
                                 <span class="material-symbols-outlined text-sm">delete</span>
                             </button>
-                        </div>
-                    `;
-                } else if (mediaData && mediaType === 'video') {
+                        </div>`;
+                } else if (mediaData) {
+                    const icon = mediaType === 'video' ? 'movie' : 'music_note';
                     mediaPreview = `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center relative group">
-                            <span class="text-6xl">🎬</span>
-                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
+                        <div class="aspect-video w-full bg-[#f0f0f0] rounded-lg overflow-hidden mb-4 flex items-center justify-center relative group">
+                            <span class="material-symbols-outlined text-5xl text-[#ccc]">${icon}</span>
+                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-1.5 bg-white/80 hover:bg-white text-[#666] hover:text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all border border-[#e0e0e0]" title="Remove">
                                 <span class="material-symbols-outlined text-sm">delete</span>
                             </button>
-                        </div>
-                    `;
-                } else if (mediaData && mediaType === 'audio') {
-                    mediaPreview = `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center relative group">
-                            <span class="text-6xl">🎵</span>
-                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
-                                <span class="material-symbols-outlined text-sm">delete</span>
-                            </button>
-                        </div>
-                    `;
+                        </div>`;
                 }
+            }
+
+            if (!mediaPreview) {
+                mediaPreview = `
+                    <div class="aspect-video w-full bg-[#f5f5f5] rounded-lg overflow-hidden mb-4 flex items-center justify-center relative group">
+                        <span class="material-symbols-outlined text-5xl text-[#ccc]">${getServiceMaterialIcon(job.app_id)}</span>
+                        <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-1.5 bg-white/80 hover:bg-white text-[#666] hover:text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all border border-[#e0e0e0]" title="Remove">
+                            <span class="material-symbols-outlined text-sm">delete</span>
+                        </button>
+                    </div>`;
             }
 
             const prompt = job.params?.prompt || job.params?.text || 'No prompt';
             const truncatedPrompt = prompt.length > 80 ? prompt.substring(0, 80) + '...' : prompt;
 
             return `
-                <div class="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-6 job-card-hover cursor-pointer relative group" onclick="viewJobDetails('${job.job_id}')">
-                    ${mediaPreview || `
-                        <div class="aspect-square w-full bg-slate-800 rounded-lg overflow-hidden mb-4 flex items-center justify-center relative">
-                            <span class="text-6xl">${getServiceIcon(job.app_id)}</span>
-                            <button onclick="deleteJob('${job.job_id}', event)" class="absolute top-2 right-2 p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from history">
-                                <span class="material-symbols-outlined text-sm">delete</span>
-                            </button>
-                        </div>
-                    `}
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs text-slate-400 font-semibold uppercase">${getServiceName(job.app_id)}</span>
+                <div class="bg-white border border-[#e0e0e0] rounded-xl p-5 card-hover cursor-pointer" onclick="viewJobDetails('${job.job_id}')">
+                    ${mediaPreview}
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs text-[#999] font-semibold uppercase tracking-wider">${getServiceName(job.app_id)}</span>
                         ${getStatusBadge(job.status)}
                     </div>
-                    <p class="text-sm text-slate-600 dark:text-slate-300 mb-3 line-clamp-2">${truncatedPrompt}</p>
-                    <div class="flex items-center justify-between text-xs text-slate-400">
-                        <div class="flex items-center gap-2">
-                            <span class="material-symbols-outlined text-xs">schedule</span>
-                            <span>${formatDate(job.created_at)}</span>
-                        </div>
+                    <p class="text-sm text-[#555] mb-3 line-clamp-2">${truncatedPrompt}</p>
+                    <div class="flex items-center gap-2 text-xs text-[#aaa]">
+                        <span class="material-symbols-outlined text-xs">schedule</span>
+                        <span>${formatDate(job.created_at)}</span>
                     </div>
                     ${job.error_log ? `<p class="mt-2 text-xs text-red-500">${job.error_log}</p>` : ''}
-                </div>
-            `;
+                </div>`;
         }
 
-        // View job details
         function viewJobDetails(jobId) {
             const username = getUsername();
             if (!username) return;
 
-            fetch(`/api/user/jobs/${jobId}?username=${encodeURIComponent(username)}`)
+            fetch(`api/user/jobs/${jobId}?username=${encodeURIComponent(username)}`)
                 .then(res => res.json())
                 .then(job => {
                     const output = job.result || job.output;
                     const mediaType = output ? getMediaType(output) : 'unknown';
                     const mediaData = output ? getMediaData(output) : null;
-                    
+
                     if (mediaData) {
                         const newWindow = window.open('', '_blank');
                         let mediaElement = '';
-                        
+
                         if (mediaType === 'image') {
                             const src = mediaData.startsWith('data:') ? mediaData : `data:image/png;base64,${mediaData}`;
                             mediaElement = `<img src="${src}" alt="Generated image" style="max-width:100%;max-height:80vh;border-radius:8px;"/>`;
@@ -398,18 +333,20 @@
                             const src = mediaData.startsWith('data:') ? mediaData : `data:audio/wav;base64,${mediaData}`;
                             mediaElement = `<audio controls><source src="${src}" type="audio/wav"></audio>`;
                         }
-                        
+
                         newWindow.document.write(`
                             <html>
                             <head><title>Job ${job.job_id}</title>
-                            <style>body{margin:0;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;padding:20px;color:#fff;font-family:sans-serif;}
-                            pre{background:#2a2a4e;padding:15px;border-radius:8px;max-width:800px;overflow:auto;}</style>
+                            <style>body{margin:0;background:#fafafa;display:flex;flex-direction:column;align-items:center;padding:40px 20px;color:#1a1a1a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+                            h2{font-size:1.25rem;font-weight:600;margin-bottom:8px;}
+                            p{color:#666;margin-bottom:24px;font-size:0.875rem;}
+                            pre{background:#fff;border:1px solid #e0e0e0;padding:20px;border-radius:12px;max-width:800px;width:100%;overflow:auto;font-size:0.8rem;color:#555;}</style>
                             </head>
                             <body>
                             <h2>Job: ${job.job_id}</h2>
-                            <p>Service: ${getServiceName(job.app_id)} | Status: ${job.status} | Created: ${new Date(job.created_at).toLocaleString()}</p>
+                            <p>${getServiceName(job.app_id)} &middot; ${job.status} &middot; ${new Date(job.created_at).toLocaleString()}</p>
                             ${mediaElement}
-                            <h3>Parameters</h3>
+                            <h3 style="margin-top:24px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#999;">Parameters</h3>
                             <pre>${JSON.stringify(job.params, null, 2)}</pre>
                             </body></html>
                         `);
@@ -422,11 +359,10 @@
                 });
         }
 
-        // Load jobs
         async function loadJobs() {
             const username = getUsername();
             if (!username) {
-                document.getElementById('jobsGrid').innerHTML = '<div class="text-center text-slate-400 py-12 col-span-full">Please set your username to view history</div>';
+                document.getElementById('jobsGrid').innerHTML = '<div class="text-center text-[#aaa] py-12 col-span-full">Please set your username to view history</div>';
                 return;
             }
 
@@ -434,7 +370,7 @@
             const status = document.getElementById('filterStatus').value;
 
             try {
-                let url = `/api/user/jobs?username=${encodeURIComponent(username)}`;
+                let url = `api/user/jobs?username=${encodeURIComponent(username)}`;
                 if (appId) url += `&app_id=${appId}`;
                 if (status) url += `&status=${status}`;
 
@@ -444,17 +380,15 @@
                 document.getElementById('jobCount').textContent = data.count;
 
                 if (data.count === 0) {
-                    document.getElementById('jobsGrid').innerHTML = '<div class="text-center text-slate-400 py-12 col-span-full">No submissions found</div>';
+                    document.getElementById('jobsGrid').innerHTML = '<div class="text-center text-[#aaa] py-12 col-span-full">No submissions found</div>';
                     return;
                 }
 
-                const jobsHTML = data.jobs.map(job => renderJobCard(job)).join('');
-                document.getElementById('jobsGrid').innerHTML = jobsHTML;
+                document.getElementById('jobsGrid').innerHTML = data.jobs.map(job => renderJobCard(job)).join('');
 
-                // Auto-refresh if there are processing/queued jobs
                 const hasPendingJobs = data.jobs.some(j => j.status === 'PROCESSING' || j.status === 'QUEUED');
                 if (hasPendingJobs) {
-                    setTimeout(loadJobs, 5000); // Refresh every 5 seconds
+                    setTimeout(loadJobs, 5000);
                 }
             } catch (error) {
                 console.error('Error loading jobs:', error);
@@ -462,7 +396,6 @@
             }
         }
 
-        // Initialize
         window.onload = function() {
             const username = getUsername();
             if (username) {
@@ -473,12 +406,9 @@
             }
         };
 
-        // Allow Enter key to save username
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('usernameInput')?.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    saveUsername();
-                }
+                if (e.key === 'Enter') saveUsername();
             });
         });
     </script>

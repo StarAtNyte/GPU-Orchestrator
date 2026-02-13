@@ -7,9 +7,12 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>AI Services Dashboard</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
     <style>
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
     </style>
     <script id="tailwind-config">
         tailwind.config = {
@@ -38,10 +41,10 @@
     <header class="border-b border-[#e0e0e0] bg-white sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <h1 class="text-xl font-semibold tracking-tight">GPU Orchestrator</h1>
+                <h1 class="text-xl font-semibold tracking-tight">GPU Polling</h1>
             </div>
             <div class="flex items-center gap-6">
-                <a href="/history" class="text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">History</a>
+                <a href="history" class="text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">History</a>
                 <div id="systemStatusBadge" class="flex items-center gap-2">
                     <span id="statusDot" class="w-2 h-2 rounded-full bg-yellow-400"></span>
                     <span id="systemStatusText" class="text-[#666] text-sm">Connecting…</span>
@@ -54,7 +57,8 @@
         <!-- PageHeading -->
         <div class="text-center mb-12 max-w-2xl mx-auto">
             <h2 class="text-4xl md:text-5xl font-bold mb-4 tracking-tight">AI Services</h2>
-            <p class="text-[#666] text-lg">Manage your GPU generation and processing tasks from a centralized interface.</p>
+            <p class="text-[#666] text-lg">Manage your GPU generation and processing tasks from a centralized interface.
+            </p>
         </div>
 
         <!-- Services Grid -->
@@ -69,12 +73,13 @@
     <!-- Footer -->
     <footer class="mt-auto border-t border-[#e0e0e0] bg-white py-6">
         <div class="max-w-7xl mx-auto px-6 flex items-center justify-between">
-            <p class="text-[#aaa] text-sm">© 2025 GPU Orchestrator</p>
-            <a class="text-[#aaa] hover:text-[#666] text-sm transition-colors" href="http://localhost:8000" target="_blank">Admin Console</a>
+            <p class="text-[#aaa] text-sm">© 2026 GPU Polling</p>
+            <a class="text-[#aaa] hover:text-[#666] text-sm transition-colors" href="http://localhost:8000"
+                target="_blank">Admin Console</a>
         </div>
     </footer>
 
-    <script src="/static/app.js"></script>
+    <script src="static/app.js"></script>
 </body>
 
 </html>
