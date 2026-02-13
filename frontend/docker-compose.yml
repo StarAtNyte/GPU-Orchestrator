@@ -10,9 +10,9 @@ services:
       dockerfile: Dockerfile
     container_name: main-dashboard
     ports:
-      - "8080:8888"
+      - "8810:8888"
     environment:
-      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
       - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost}
     networks:
       - frontend-network
@@ -29,9 +29,9 @@ services:
       dockerfile: Dockerfile
     container_name: sdxl-ui
     ports:
-      - "7861:7861"
+      - "8861:7861"
     environment:
-      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
     networks:
       - frontend-network
     restart: unless-stopped
@@ -48,9 +48,9 @@ services:
       dockerfile: Dockerfile
     container_name: z-image-ui
     ports:
-      - "7862:7862"
+      - "8862:7862"
     environment:
-      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
     networks:
       - frontend-network
     restart: unless-stopped
@@ -67,9 +67,9 @@ services:
       dockerfile: Dockerfile
     container_name: admin-dashboard
     ports:
-      - "8000:8000"
+      - "8811:8000"
     environment:
-      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
     networks:
       - frontend-network
     restart: unless-stopped
@@ -86,9 +86,9 @@ services:
       dockerfile: Dockerfile
     container_name: qwen-image-edit-ui
     ports:
-      - "7865:7865"
+      - "8865:7865"
     environment:
-      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
     networks:
       - frontend-network
     restart: unless-stopped
@@ -105,9 +105,9 @@ services:
       dockerfile: Dockerfile
     container_name: qwen-image-variations-ui
     ports:
-      - "7866:7866"
+      - "8866:7866"
     environment:
-      - ORCHESTRATOR_URL=http://172.17.0.1:9090
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
     networks:
       - frontend-network
     restart: unless-stopped

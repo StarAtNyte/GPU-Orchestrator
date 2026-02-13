@@ -81,7 +81,7 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
       NVIDIA_VISIBLE_DEVICES: all
     ports:
-      - "9090:8080"
+      - "8890:8080"
     volumes:
       - ./config/apps.yaml:/app/config/apps.yaml
       - ../scripts:/app/scripts
