@@ -39,7 +39,7 @@ async function loadJobs() {
             offset: currentPage * pageSize
         });
 
-        const response = await fetch(`/api/jobs?${params}`, { credentials: 'same-origin' });
+        const response = await fetch(`api/jobs?${params}`, { credentials: 'same-origin' });
         if (!response.ok) throw new Error('Failed to fetch jobs');
 
         const data = await response.json();
@@ -190,7 +190,7 @@ async function cancelJob(jobId) {
     }
 
     try {
-        const response = await fetch(`/api/jobs/${jobId}/cancel`, {
+        const response = await fetch(`api/jobs/${jobId}/cancel`, {
             method: 'POST',
             credentials: 'same-origin'
         });
@@ -218,7 +218,7 @@ async function retryJob(jobId) {
     }
 
     try {
-        const response = await fetch(`/api/jobs/${jobId}/retry`, {
+        const response = await fetch(`api/jobs/${jobId}/retry`, {
             method: 'POST',
             credentials: 'same-origin'
         });
@@ -274,7 +274,7 @@ function previousPage() {
 async function loadApps() {
     try {
         // Get unique app IDs from jobs (simplified approach)
-        const response = await fetch('/api/jobs?limit=1000', { credentials: 'same-origin' });
+        const response = await fetch('api/jobs?limit=1000', { credentials: 'same-origin' });
         if (!response.ok) return;
 
         const data = await response.json();

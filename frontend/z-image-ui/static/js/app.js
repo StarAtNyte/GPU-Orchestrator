@@ -170,7 +170,7 @@ class ZImageUI {
 
     async checkHealth() {
         try {
-            const response = await fetch('/health');
+            const response = await fetch('health');
             const data = await response.json();
             if (data.orchestrator === 'connected') {
                 this.statusBadge.classList.remove('disconnected');
@@ -219,7 +219,7 @@ class ZImageUI {
         this.jobIdDisplay.textContent = '';
 
         try {
-            const response = await fetch('/api/generate', {
+            const response = await fetch('api/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -246,7 +246,7 @@ class ZImageUI {
     startPolling() {
         this.pollInterval = setInterval(async () => {
             try {
-                const response = await fetch(`/api/status/${this.currentJobId}`);
+                const response = await fetch(`api/status/${this.currentJobId}`);
                 const data = await response.json();
 
                 if (data.success) {

@@ -20,10 +20,10 @@ async function loadDashboardData() {
 
         // Load all data in parallel
         const [summaryResponse, jobsResponse, workersResponse, configResponse] = await Promise.all([
-            fetchWithRetry('/api/metrics/summary'),
-            fetchWithRetry('/api/jobs?limit=10&offset=0'),
-            fetchWithRetry('/api/workers/status'),
-            fetchWithRetry('/api/config')
+            fetchWithRetry('api/metrics/summary'),
+            fetchWithRetry('api/jobs?limit=10&offset=0'),
+            fetchWithRetry('api/workers/status'),
+            fetchWithRetry('api/config')
         ]);
 
         // Update UI components
@@ -483,7 +483,7 @@ function copyToClipboard(text, buttonEl) {
  * View job details (navigate to jobs page with filter)
  */
 function viewJob(jobId) {
-    window.location.href = `/jobs?job_id=${jobId}`;
+    window.location.href = `jobs?job_id=${jobId}`;
 }
 
 /**
@@ -493,7 +493,7 @@ async function cancelJob(jobId) {
     if (!confirm('Are you sure you want to cancel this job?')) return;
 
     try {
-        const response = await fetch(`/api/jobs/${jobId}/cancel`, {
+        const response = await fetch(`api/jobs/${jobId}/cancel`, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' }
@@ -517,7 +517,7 @@ async function cancelJob(jobId) {
  */
 async function retryJob(jobId) {
     try {
-        const response = await fetch(`/api/jobs/${jobId}/retry`, {
+        const response = await fetch(`api/jobs/${jobId}/retry`, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' }

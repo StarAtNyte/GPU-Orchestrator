@@ -21,15 +21,12 @@ templates = Jinja2Templates(directory="templates")
 
 # Configuration
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://192.168.50.28:8080")
-# Base URL for frontend services (e.g., "http://192.168.1.100" or "https://myserver.local")
-# If not set, falls back to localhost (only works for local access)
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost")
 
 # Service registry (frontend services)
 FRONTEND_SERVICES = {
     "sdxl": {
         "name": "SDXL Image Generator",
-        "url": f"{FRONTEND_BASE_URL}:7861",
+        "url": "/gpu-polling/sdxl/",
         "container_name": "sdxl-ui",
         "port": 7861,
         "icon": "🎨",
@@ -38,7 +35,7 @@ FRONTEND_SERVICES = {
     },
     "z-image": {
         "name": "Z-Image Generator",
-        "url": f"{FRONTEND_BASE_URL}:7862",
+        "url": "/gpu-polling/zimage/",
         "container_name": "z-image-ui",
         "port": 7862,
         "icon": "🖼️",
@@ -47,7 +44,7 @@ FRONTEND_SERVICES = {
     },
     "qwen-variations": {
         "name": "Qwen Image Variations",
-        "url": f"{FRONTEND_BASE_URL}:7866",
+        "url": "/gpu-polling/qwen-variations/",
         "container_name": "qwen-image-variations-ui",
         "port": 7866,
         "icon": "🎨",

@@ -80,7 +80,7 @@ def get_client_ip(request: Request) -> str:
 @app.get("/", response_class=RedirectResponse)
 async def root():
     """Redirect root to dashboard."""
-    return RedirectResponse(url="/dashboard")
+    return RedirectResponse(url="/gpu-polling/admin/dashboard")
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -89,7 +89,7 @@ async def login_page(request: Request):
     # Check if already logged in
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id and validate_session(session_id):
-        return RedirectResponse(url="/dashboard")
+        return RedirectResponse(url="/gpu-polling/admin/dashboard")
 
     return templates.TemplateResponse("login.html", {"request": request})
 
@@ -161,7 +161,7 @@ async def login(
     )
 
     # Set cookie and redirect
-    response = RedirectResponse(url="/dashboard", status_code=303)
+    response = RedirectResponse(url="/gpu-polling/admin/dashboard", status_code=303)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_id,
@@ -188,7 +188,7 @@ async def logout(request: Request):
             )
         destroy_session(session_id)
 
-    response = RedirectResponse(url="/login")
+    response = RedirectResponse(url="/gpu-polling/admin/login")
     response.delete_cookie(SESSION_COOKIE_NAME)
     return response
 

@@ -8,7 +8,7 @@
  */
 async function loadConfiguration() {
     try {
-        const response = await fetch('/api/config', { credentials: 'same-origin' });
+        const response = await fetch('api/config', { credentials: 'same-origin' });
         if (!response.ok) throw new Error('Failed to fetch configuration');
 
         const config = await response.json();

@@ -4,6 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <base href="/gpu-polling/admin/">
     <title>{% block title %}GPU Orchestrator Admin{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
@@ -167,25 +168,25 @@
                 </div>
                 <nav class="flex flex-col gap-2">
                     <a class="flex items-center gap-3 px-3 py-2 rounded-lg {% if active_page == 'dashboard' %}bg-[#252249]{% else %}hover:bg-[#252249]/50{% endif %}"
-                        href="/dashboard">
+                        href="dashboard">
                         <span class="material-symbols-outlined text-white"
                             {% if active_page == 'dashboard' %}style="font-variation-settings: 'FILL' 1;"{% endif %}>dashboard</span>
                         <p class="text-white text-sm font-medium leading-normal">Dashboard</p>
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2 rounded-lg {% if active_page == 'jobs' %}bg-[#252249]{% else %}hover:bg-[#252249]/50{% endif %}"
-                        href="/jobs">
+                        href="jobs">
                         <span class="material-symbols-outlined text-white"
                             {% if active_page == 'jobs' %}style="font-variation-settings: 'FILL' 1;"{% endif %}>list_alt</span>
                         <p class="text-white text-sm font-medium leading-normal">Jobs</p>
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2 rounded-lg {% if active_page == 'workers' %}bg-[#252249]{% else %}hover:bg-[#252249]/50{% endif %}"
-                        href="/workers">
+                        href="workers">
                         <span class="material-symbols-outlined text-white"
                             {% if active_page == 'workers' %}style="font-variation-settings: 'FILL' 1;"{% endif %}>memory</span>
                         <p class="text-white text-sm font-medium leading-normal">Workers</p>
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2 rounded-lg {% if active_page == 'config' %}bg-[#252249]{% else %}hover:bg-[#252249]/50{% endif %}"
-                        href="/config">
+                        href="config">
                         <span class="material-symbols-outlined text-white"
                             {% if active_page == 'config' %}style="font-variation-settings: 'FILL' 1;"{% endif %}>settings</span>
                         <p class="text-white text-sm font-medium leading-normal">Config</p>
@@ -197,7 +198,7 @@
                     <p class="text-[#9590cb] text-xs font-normal">Logged in as</p>
                     <p class="text-white text-sm font-medium">{{ admin.username }}</p>
                 </div>
-                <a class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#252249]/50" href="/logout">
+                <a class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#252249]/50" href="logout">
                     <span class="material-symbols-outlined text-white">logout</span>
                     <p class="text-white text-sm font-medium leading-normal">Logout</p>
                 </a>

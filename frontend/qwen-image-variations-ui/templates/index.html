@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/gpu-polling/qwen-variations/">
     <title>Qwen Image Variations</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -421,7 +422,7 @@
             resultState.style.display = 'none';
             loadingText.textContent = 'Submitting...';
 
-            fetch('/api/variation', {
+            fetch('api/variation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -457,7 +458,7 @@
 
         async function pollStatus(jobId) {
             try {
-                const response = await fetch(`/api/status/${jobId}`);
+                const response = await fetch(`api/status/${jobId}`);
                 const data = await response.json();
 
                 if (data.status === 'COMPLETED') {
@@ -495,7 +496,7 @@
 
         async function checkHealth() {
             try {
-                const response = await fetch('/health');
+                const response = await fetch('health');
                 const data = await response.json();
                 if (data.orchestrator === 'connected') {
                     statusBadge.className = 'status-badge status-online';

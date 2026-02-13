@@ -10,7 +10,7 @@ let workersData = null;
  */
 async function loadWorkers() {
     try {
-        const response = await fetch('/api/workers/status', { credentials: 'same-origin' });
+        const response = await fetch('api/workers/status', { credentials: 'same-origin' });
         if (!response.ok) throw new Error('Failed to fetch worker status');
 
         workersData = await response.json();
@@ -153,7 +153,7 @@ function createInactiveWorkerCard(worker) {
  */
 async function loadLatestMetrics() {
     try {
-        const response = await fetch('/api/metrics/latest', { credentials: 'same-origin' });
+        const response = await fetch('api/metrics/latest', { credentials: 'same-origin' });
         if (!response.ok) return;
 
         const data = await response.json();
@@ -193,7 +193,7 @@ async function startWorker(workerName) {
     showInfo(`Starting ${workerName}...`);
 
     try {
-        const response = await fetch('/api/workers/action', {
+        const response = await fetch('api/workers/action', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
@@ -226,7 +226,7 @@ async function stopWorker() {
     showInfo('Stopping worker...');
 
     try {
-        const response = await fetch('/api/workers/action', {
+        const response = await fetch('api/workers/action', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
@@ -255,7 +255,7 @@ async function switchWorker(workerName) {
     showInfo(`Switching to ${workerName}... This may take 30-60 seconds`);
 
     try {
-        const response = await fetch('/api/workers/action', {
+        const response = await fetch('api/workers/action', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
