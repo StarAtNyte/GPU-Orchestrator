@@ -1,5 +1,12 @@
 # Worker definitions with resource requirements
 workers:
+  qwen35-chat-worker:
+    app_id: "qwen35-chat"
+    queue: "jobs:qwen35-chat"
+    vram_required_gb: 22
+    startup_time_seconds: 60
+    shutdown_time_seconds: 10
+
   z-image-worker:
     app_id: "z-image"
     queue: "jobs:z-image"

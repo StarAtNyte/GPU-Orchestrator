@@ -1,5 +1,46 @@
 apps:
   # Local GPU Worker Apps
+
+  - id: "qwen35-chat"
+    name: "Qwen3.5 Chat"
+    type: "local"
+    queue: "jobs:qwen35-chat"
+    description: "Chat with Qwen3.5-35B-A3B (MoE, 22GB Q4) — streaming via Redis Streams"
+    gpu_vram_gb: 22
+    docker_image: "backend-qwen35-chat-worker:latest"
+    container_name: "qwen35-chat-worker"
+    idle_timeout_seconds: 300
+    startup_timeout_seconds: 180
+    parameters:
+      - name: "messages"
+        type: "string"
+        required: true
+        description: "JSON array of {role, content} messages"
+      - name: "temperature"
+        type: "string"
+        required: false
+        description: "Sampling temperature"
+      - name: "top_p"
+        type: "string"
+        required: false
+        description: "Top-P nucleus sampling"
+      - name: "top_k"
+        type: "string"
+        required: false
+        description: "Top-K sampling"
+      - name: "max_tokens"
+        type: "string"
+        required: false
+        description: "Maximum tokens to generate"
+      - name: "presence_penalty"
+        type: "string"
+        required: false
+        description: "Presence penalty (0–2)"
+      - name: "enable_thinking"
+        type: "string"
+        required: false
+        description: "Enable thinking mode: 'true' or 'false'"
+
   - id: "sdxl-image-gen"
     name: "SDXL Image Generator"
     type: "local"

@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qwen3.5 Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css" />
+
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #e0e7ff;
+      --amber: #f59e0b;
+      --amber-bg: #fffbeb;
+      --amber-border: #fde68a;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--gray-50);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: white;
+      border-bottom: 1px solid var(--gray-200);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .header-logo {
+      width: 32px; height: 32px;
+      background: var(--primary);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 700; font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .header-title { font-size: 15px; font-weight: 600; color: var(--gray-800); }
+    .header-sub   { font-size: 12px; color: var(--gray-500); margin-top: 1px; }
+
+    .header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--gray-300);
+      transition: background 0.3s;
+    }
+    .status-dot.online  { background: #10b981; box-shadow: 0 0 0 3px #d1fae5; }
+    .status-dot.loading { background: var(--amber); box-shadow: 0 0 0 3px #fef3c7; animation: pulse 1.2s infinite; }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+    .btn {
+      padding: 7px 14px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-sm);
+      background: white;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--gray-700);
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn:hover { background: var(--gray-50); border-color: var(--gray-300); }
+    .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+    .btn.primary:hover { background: var(--primary-dark); }
+    .btn.danger:hover { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+    .btn.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+
+    /* ── Layout ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Settings panel ── */
+    .settings-panel {
+      width: 280px;
+      background: white;
+      border-right: 1px solid var(--gray-200);
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      flex-shrink: 0;
+      transition: width 0.2s, padding 0.2s;
+    }
+    .settings-panel.collapsed { width: 0; padding: 0; overflow: hidden; }
+
+    .settings-section { display: flex; flex-direction: column; gap: 10px; }
+    .settings-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--gray-500);
+    }
+
+    .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .mode-btn {
+      padding: 8px 6px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-sm);
+      background: white;
+      font-size: 12px; font-weight: 500;
+      color: var(--gray-700);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .mode-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    .mode-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0;
+    }
+    .toggle-label { font-size: 13px; color: var(--gray-700); font-weight: 500; }
+    .toggle-sub { font-size: 11px; color: var(--gray-400); margin-top: 2px; }
+
+    .toggle {
+      position: relative; width: 40px; height: 22px; cursor: pointer;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: var(--gray-200); border-radius: 11px;
+      transition: 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute; width: 16px; height: 16px;
+      left: 3px; top: 3px;
+      background: white; border-radius: 50%;
+      transition: 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .toggle input:checked + .toggle-slider { background: var(--primary); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+    .slider-row { display: flex; flex-direction: column; gap: 6px; }
+    .slider-header { display: flex; justify-content: space-between; align-items: center; }
+    .slider-name { font-size: 13px; color: var(--gray-700); font-weight: 500; }
+    .slider-value {
+      font-size: 12px; color: var(--primary); font-weight: 600;
+      background: var(--primary-light); padding: 2px 7px; border-radius: 4px;
+    }
+    input[type=range] {
+      width: 100%; accent-color: var(--primary); cursor: pointer;
+    }
+
+    .system-prompt-area {
+      width: 100%; min-height: 80px;
+      padding: 8px 10px;
+      border: 1px solid var(--gray-200); border-radius: var(--radius-sm);
+      font-family: 'Inter', sans-serif; font-size: 12px;
+      color: var(--gray-700); resize: vertical;
+      transition: border-color 0.15s;
+    }
+    .system-prompt-area:focus { outline: none; border-color: var(--primary); }
+
+    /* ── Chat area ── */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    /* Welcome screen */
+    .welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--gray-400);
+      text-align: center;
+      padding: 40px;
+    }
+    .welcome-icon {
+      width: 56px; height: 56px;
+      background: var(--primary-light);
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; margin-bottom: 4px;
+    }
+    .welcome h2 { font-size: 18px; font-weight: 600; color: var(--gray-700); }
+    .welcome p  { font-size: 13px; max-width: 340px; line-height: 1.6; }
+
+    /* Message bubbles */
+    .message-row {
+      display: flex;
+      gap: 10px;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+    .message-row.user  { flex-direction: row-reverse; }
+
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600;
+      flex-shrink: 0; margin-top: 2px;
+    }
+    .avatar.user      { background: var(--primary); color: white; }
+    .avatar.assistant { background: var(--gray-200); color: var(--gray-600); }
+
+    .bubble-wrap { display: flex; flex-direction: column; gap: 4px; max-width: 75%; }
+    .message-row.user .bubble-wrap { align-items: flex-end; }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--gray-800);
+      word-break: break-word;
+    }
+    .message-row.user .bubble {
+      background: var(--primary);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .message-row.assistant .bubble {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-bottom-left-radius: 4px;
+    }
+
+    /* Thinking block */
+    .think-block {
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .think-header {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px; font-weight: 600; color: #92400e;
+    }
+    .think-header:hover { background: rgba(0,0,0,.03); }
+    .think-chevron { transition: transform 0.2s; font-size: 10px; }
+    .think-block.open .think-chevron { transform: rotate(180deg); }
+    .think-body {
+      display: none;
+      padding: 0 12px 10px;
+      font-size: 12px; color: #78350f;
+      line-height: 1.6; white-space: pre-wrap;
+      max-height: 300px; overflow-y: auto;
+    }
+    .think-block.open .think-body { display: block; }
+
+    /* Streaming cursor */
+    .cursor {
+      display: inline-block;
+      width: 2px; height: 14px;
+      background: var(--primary);
+      margin-left: 2px; vertical-align: text-bottom;
+      animation: blink 0.8s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* Markdown rendered content */
+    .bubble p { margin: 0 0 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: rgba(0,0,0,.07);
+      padding: 1px 5px; border-radius: 4px;
+    }
+    .message-row.user .bubble code { background: rgba(255,255,255,.2); }
+    .bubble pre {
+      background: var(--gray-900);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    .bubble pre code { background: none; padding: 0; color: #e5e7eb; font-size: 12.5px; }
+    .bubble ul, .bubble ol { padding-left: 20px; margin: 6px 0; }
+    .bubble li { margin: 3px 0; }
+    .bubble h1,.bubble h2,.bubble h3 { margin: 10px 0 4px; font-size: 14px; }
+    .bubble blockquote {
+      border-left: 3px solid var(--gray-300);
+      padding-left: 12px; color: var(--gray-500); margin: 6px 0;
+    }
+    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+    .bubble th,.bubble td { border: 1px solid var(--gray-200); padding: 6px 10px; }
+    .bubble th { background: var(--gray-50); font-weight: 600; }
+
+    /* Message actions */
+    .message-actions {
+      display: flex; gap: 6px;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .message-row:hover .message-actions { opacity: 1; }
+    .action-btn {
+      padding: 3px 8px;
+      font-size: 11px; color: var(--gray-400);
+      background: none; border: 1px solid var(--gray-200);
+      border-radius: 4px; cursor: pointer; transition: all 0.15s;
+    }
+    .action-btn:hover { color: var(--gray-700); border-color: var(--gray-300); background: white; }
+
+    /* Status bar (loading/generating) */
+    .status-bar {
+      padding: 8px 20px;
+      font-size: 12px; color: var(--gray-500);
+      display: flex; align-items: center; gap: 8px;
+      background: var(--gray-50);
+      border-top: 1px solid var(--gray-200);
+      display: none;
+    }
+    .status-bar.visible { display: flex; }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--gray-200);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    /* ── Input area ── */
+    .input-area {
+      background: white;
+      border-top: 1px solid var(--gray-200);
+      padding: 14px 20px;
+      flex-shrink: 0;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    .input-wrap { flex: 1; position: relative; }
+
+    textarea#userInput {
+      width: 100%;
+      min-height: 44px; max-height: 180px;
+      padding: 11px 14px;
+      border: 1px solid var(--gray-300);
+      border-radius: var(--radius-sm);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      color: var(--gray-800);
+      resize: none;
+      line-height: 1.5;
+      transition: border-color 0.15s;
+      overflow-y: auto;
+    }
+    textarea#userInput:focus { outline: none; border-color: var(--primary); }
+    textarea#userInput::placeholder { color: var(--gray-400); }
+
+    .send-btn {
+      width: 44px; height: 44px;
+      background: var(--primary);
+      border: none; border-radius: var(--radius-sm);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s; flex-shrink: 0; color: white;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--primary-dark); }
+    .send-btn:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
+    .send-btn.stop { background: #ef4444; }
+    .send-btn.stop:hover { background: #dc2626; }
+
+    .input-hint {
+      font-size: 11px; color: var(--gray-400);
+      margin-top: 6px; text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<div class="header">
+  <div class="header-logo">Q</div>
+  <div>
+    <div class="header-title">Qwen3.5-35B-A3B</div>
+    <div class="header-sub">MoE · RTX 4090 · Local</div>
+  </div>
+  <div class="header-actions">
+    <div class="status-dot" id="statusDot" title="Orchestrator status"></div>
+    <button class="btn" onclick="clearChat()" title="Clear conversation">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+      Clear
+    </button>
+    <button class="btn" id="settingsToggle" onclick="toggleSettings()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ MAIN ═══════════════════════ -->
+<div class="main">
+
+  <!-- Settings panel -->
+  <div class="settings-panel" id="settingsPanel">
+
+    <div class="settings-section">
+      <div class="settings-label">Mode Presets</div>
+      <div class="mode-grid">
+        <button class="mode-btn active" onclick="applyMode('general')"    id="mode-general">General</button>
+        <button class="mode-btn"        onclick="applyMode('coding')"     id="mode-coding">Coding</button>
+        <button class="mode-btn"        onclick="applyMode('reasoning')"  id="mode-reasoning">Reasoning</button>
+        <button class="mode-btn"        onclick="applyMode('creative')"   id="mode-creative">Creative</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">Thinking</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Enable thinking</div>
+          <div class="toggle-sub">Model reasons before answering</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="enableThinking" onchange="onThinkingToggle()" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">Parameters</div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">Temperature</span>
+          <span class="slider-value" id="tempVal">0.7</span>
+        </div>
+        <input type="range" id="temperature" min="0" max="2" step="0.05" value="0.7"
+               oninput="document.getElementById('tempVal').textContent=this.value" />
+      </div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">Top-P</span>
+          <span class="slider-value" id="topPVal">0.8</span>
+        </div>
+        <input type="range" id="topP" min="0" max="1" step="0.05" value="0.8"
+               oninput="document.getElementById('topPVal').textContent=this.value" />
+      </div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">Max tokens</span>
+          <span class="slider-value" id="maxTokVal">8192</span>
+        </div>
+        <input type="range" id="maxTokens" min="256" max="32768" step="256" value="8192"
+               oninput="document.getElementById('maxTokVal').textContent=this.value" />
+      </div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">Presence penalty</span>
+          <span class="slider-value" id="presVal">1.5</span>
+        </div>
+        <input type="range" id="presencePenalty" min="0" max="2" step="0.05" value="1.5"
+               oninput="document.getElementById('presVal').textContent=this.value" />
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">System prompt</div>
+      <textarea class="system-prompt-area" id="systemPrompt"
+        placeholder="You are a helpful assistant…"></textarea>
+    </div>
+
+  </div>
+
+  <!-- Chat area -->
+  <div class="chat-area">
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">🤖</div>
+        <h2>Qwen3.5-35B-A3B</h2>
+        <p>A hybrid MoE model running locally on your RTX 4090. Ask anything — code, math, writing, analysis.</p>
+        <p id="modelHint" style="font-size:11px;color:var(--gray-300);margin-top:8px">First message loads the model (~2 min). Stays warm for 5 min.</p>
+      </div>
+    </div>
+
+    <div class="status-bar" id="statusBar">
+      <div class="spinner"></div>
+      <span id="statusText">Sending…</span>
+    </div>
+
+    <div class="input-area">
+      <div class="input-row">
+        <div class="input-wrap">
+          <textarea id="userInput" placeholder="Message Qwen3.5… (Ctrl+Enter to send)"
+            onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        </div>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send (Ctrl+Enter)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">Ctrl+Enter to send · Shift+Enter for newline</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════
+const history = [];          // {role, content} for API
+let generating  = false;
+let currentEventSource = null;
+let settingsOpen = true;
+
+// Model warmup tracking — llama-server stays loaded for IDLE_TIMEOUT (5 min)
+const MODEL_IDLE_MS = 5 * 60 * 1000;
+function isModelWarm() {
+  const t = localStorage.getItem('qwen35_last_response');
+  return t && (Date.now() - parseInt(t)) < MODEL_IDLE_MS;
+}
+function markModelWarm() {
+  localStorage.setItem('qwen35_last_response', Date.now().toString());
+}
+function modelHintText() {
+  return isModelWarm()
+    ? 'Model is warm — ready to chat.'
+    : 'First message loads the model (~2 min). Stays warm for 5 min.';
+}
+
+// Markdown renderer
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  highlight: (code, lang) => {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// Settings
+// ═══════════════════════════════════════════════════════
+function toggleSettings() {
+  settingsOpen = !settingsOpen;
+  document.getElementById('settingsPanel').classList.toggle('collapsed', !settingsOpen);
+  document.getElementById('settingsToggle').classList.toggle('active', settingsOpen);
+}
+
+function applyMode(mode) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode-' + mode).classList.add('active');
+
+  const thinking = document.getElementById('enableThinking').checked;
+  const presets = {
+    general:   { temp: thinking ? 1.0 : 0.7,  topP: thinking ? 0.95 : 0.8,  pres: 1.5, maxTok: 8192  },
+    coding:    { temp: thinking ? 0.6 : 0.7,  topP: 0.95,                   pres: 0.0, maxTok: 16384 },
+    reasoning: { temp: 1.0,                   topP: 0.95,                   pres: 1.5, maxTok: 16384 },
+    creative:  { temp: 1.2,                   topP: 0.95,                   pres: 1.5, maxTok: 8192  },
+  };
+  const p = presets[mode] || presets.general;
+  setSlider('temperature',     p.temp,   'tempVal');
+  setSlider('topP',            p.topP,   'topPVal');
+  setSlider('presencePenalty', p.pres,   'presVal');
+  setSlider('maxTokens',       p.maxTok, 'maxTokVal');
+}
+
+function setSlider(id, val, labelId) {
+  const el = document.getElementById(id);
+  el.value = val;
+  document.getElementById(labelId).textContent = val;
+}
+
+function onThinkingToggle() {
+  const active = document.querySelector('.mode-btn.active');
+  if (active) applyMode(active.id.replace('mode-', ''));
+}
+
+function getSettings() {
+  return {
+    temperature:      parseFloat(document.getElementById('temperature').value),
+    top_p:            parseFloat(document.getElementById('topP').value),
+    top_k:            20,
+    max_tokens:       parseInt(document.getElementById('maxTokens').value),
+    presence_penalty: parseFloat(document.getElementById('presencePenalty').value),
+    enable_thinking:  document.getElementById('enableThinking').checked,
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+// Input helpers
+// ═══════════════════════════════════════════════════════
+function handleKey(e) {
+  if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+}
+
+// ═══════════════════════════════════════════════════════
+// Chat
+// ═══════════════════════════════════════════════════════
+function clearChat() {
+  history.length = 0;
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = '<div class="welcome" id="welcome">' +
+    '<div class="welcome-icon">🤖</div>' +
+    '<h2>Qwen3.5-35B-A3B</h2>' +
+    '<p>A hybrid MoE model running locally on your RTX 4090. Ask anything — code, math, writing, analysis.</p>' +
+    '<p id="modelHint" style="font-size:11px;color:var(--gray-300);margin-top:8px">' + modelHintText() + '</p>' +
+    '</div>';
+}
+
+function setGenerating(on) {
+  generating = on;
+  const btn = document.getElementById('sendBtn');
+  const bar = document.getElementById('statusBar');
+  if (on) {
+    btn.classList.add('stop');
+    btn.title = 'Stop generation';
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`;
+    btn.onclick = stopGeneration;
+    bar.classList.add('visible');
+  } else {
+    btn.classList.remove('stop');
+    btn.title = 'Send (Ctrl+Enter)';
+    btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+    btn.onclick = sendMessage;
+    bar.classList.remove('visible');
+  }
+}
+
+function stopGeneration() {
+  if (currentEventSource) { currentEventSource.close(); currentEventSource = null; }
+  setGenerating(false);
+  // Finalise any in-progress message
+  const cursors = document.querySelectorAll('.cursor');
+  cursors.forEach(c => c.remove());
+}
+
+async function sendMessage() {
+  if (generating) return;
+  const input = document.getElementById('userInput');
+  const text  = input.value.trim();
+  if (!text) return;
+
+  // Hide welcome
+  const w = document.getElementById('welcome');
+  if (w) w.remove();
+
+  // Append user message
+  history.push({ role: 'user', content: text });
+  appendMessage('user', text);
+  input.value = '';
+  input.style.height = 'auto';
+
+  // Build messages array (with optional system prompt)
+  const systemPrompt = document.getElementById('systemPrompt').value.trim();
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  messages.push(...history);
+
+  setGenerating(true);
+  document.getElementById('statusText').textContent = 'Submitting job…';
+
+  const settings = getSettings();
+
+  try {
+    // 1. Submit job to orchestrator
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, ...settings }),
+    });
+    const data = await res.json();
+
+    if (!data.success) {
+      appendError(data.error || 'Failed to submit job');
+      setGenerating(false);
+      return;
+    }
+
+    document.getElementById('statusText').textContent = isModelWarm()
+      ? 'Waiting for worker…'
+      : 'Waiting for worker… (loading model, ~2 min)';
+
+    // 2. Stream tokens via SSE
+    const jobId = data.job_id;
+    const { thinkEl, responseEl, bubbleEl } = appendAssistantBubble();
+
+    let thinkBuf   = '';
+    let responseBuf = '';
+    let inThink    = false;
+    let thinkDone  = false;
+
+    currentEventSource = new EventSource(`/api/stream/${jobId}`);
+
+    currentEventSource.onmessage = (e) => {
+      if (e.data === '') return;
+      const msg = JSON.parse(e.data);
+
+      if (msg.error) {
+        appendError(msg.error);
+        currentEventSource.close();
+        setGenerating(false);
+        return;
+      }
+
+      if (msg.done) {
+        // Finalise: render markdown on the response part
+        if (!thinkDone && thinkBuf) finaliseThink(thinkEl, thinkBuf);
+        finaliseResponse(responseEl, responseBuf);
+        history.push({ role: 'assistant', content: responseBuf });
+        markModelWarm();
+        currentEventSource.close();
+        setGenerating(false);
+        document.getElementById('statusText').textContent = '';
+        return;
+      }
+
+      if (msg.content !== undefined) {
+        document.getElementById('statusText').textContent = 'Generating…';
+        const tok = msg.content;
+
+        // ── think-token tracking ──
+        if (!thinkDone) {
+          thinkBuf += tok;
+          const closeIdx = thinkBuf.indexOf('</think>');
+          if (thinkBuf.startsWith('<think>') || inThink) {
+            inThink = true;
+            if (closeIdx !== -1) {
+              const thinkContent = thinkBuf.slice('<think>'.length, closeIdx);
+              finaliseThink(thinkEl, thinkContent);
+              responseBuf = thinkBuf.slice(closeIdx + '</think>'.length);
+              thinkDone = true;
+              inThink   = false;
+              streamToken(responseEl, responseBuf);
+            } else {
+              // Still in think block: show partial
+              const partial = thinkBuf.startsWith('<think>') ? thinkBuf.slice('<think>'.length) : thinkBuf;
+              streamThinkPartial(thinkEl, partial);
+            }
+          } else if (!inThink && thinkBuf.length > 10) {
+            // No <think> tag — model skipped thinking
+            thinkDone   = true;
+            responseBuf = thinkBuf;
+            streamToken(responseEl, responseBuf);
+          }
+        } else {
+          responseBuf += tok;
+          streamToken(responseEl, tok);
+        }
+
+        scrollToBottom();
+      }
+    };
+
+    currentEventSource.onerror = () => {
+      currentEventSource.close();
+      setGenerating(false);
+    };
+
+  } catch (err) {
+    appendError(err.message);
+    setGenerating(false);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// DOM helpers
+// ═══════════════════════════════════════════════════════
+function appendMessage(role, content) {
+  const msgs = document.getElementById('messages');
+  const row  = document.createElement('div');
+  row.className = `message-row ${role}`;
+  const initials = role === 'user' ? 'U' : 'Q';
+  const rendered = role === 'user'
+    ? escapeHtml(content).replace(/\n/g, '<br>')
+    : marked.parse(content);
+  row.innerHTML = `
+    <div class="avatar ${role}">${initials}</div>
+    <div class="bubble-wrap">
+      <div class="bubble">${rendered}</div>
+      <div class="message-actions">
+        <button class="action-btn" onclick="copyText(this, ${JSON.stringify(content)})">Copy</button>
+      </div>
+    </div>`;
+  msgs.appendChild(row);
+  scrollToBottom();
+}
+
+function appendAssistantBubble() {
+  const msgs = document.getElementById('messages');
+  const row  = document.createElement('div');
+  row.className = 'message-row assistant';
+
+  // think block (hidden until <think> appears)
+  const thinkEl = document.createElement('div');
+  thinkEl.className = 'think-block';
+  thinkEl.style.display = 'none';
+  thinkEl.innerHTML = `
+    <div class="think-header" onclick="toggleThink(this.parentElement)">
+      <span>💭</span><span>Thinking</span><span class="think-chevron">▼</span>
+    </div>
+    <div class="think-body"></div>`;
+
+  // response bubble
+  const bubbleEl  = document.createElement('div');
+  bubbleEl.className = 'bubble';
+  const responseEl = document.createElement('span');
+  responseEl.className = 'response-text';
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+  bubbleEl.appendChild(responseEl);
+  bubbleEl.appendChild(cursor);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap';
+  wrap.appendChild(thinkEl);
+  wrap.appendChild(bubbleEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'message-actions';
+  actions.innerHTML = `<button class="action-btn" onclick="copyFromBubble(this)">Copy</button>`;
+  wrap.appendChild(actions);
+
+  row.innerHTML = `<div class="avatar assistant">Q</div>`;
+  row.appendChild(wrap);
+  msgs.appendChild(row);
+  scrollToBottom();
+  return { thinkEl, responseEl, bubbleEl };
+}
+
+function streamThinkPartial(thinkEl, text) {
+  thinkEl.style.display = 'block';
+  thinkEl.classList.add('open');
+  thinkEl.querySelector('.think-body').textContent = text;
+}
+
+function finaliseThink(thinkEl, text) {
+  if (!text.trim()) { thinkEl.style.display = 'none'; return; }
+  thinkEl.style.display = 'block';
+  thinkEl.classList.remove('open'); // collapsed by default after done
+  thinkEl.querySelector('.think-body').textContent = text;
+}
+
+function streamToken(el, tok) {
+  const cursor = el.parentElement.querySelector('.cursor');
+  el.textContent += tok;
+  // Move cursor to end
+  if (cursor) el.parentElement.appendChild(cursor);
+}
+
+function finaliseResponse(el, text) {
+  const bubble = el.parentElement;
+  const cursor = bubble.querySelector('.cursor');
+  if (cursor) cursor.remove();
+
+  // Render markdown
+  el.innerHTML = '';
+  const rendered = document.createElement('div');
+  rendered.innerHTML = marked.parse(text);
+  bubble.innerHTML = '';
+  bubble.appendChild(rendered);
+
+  // Syntax highlighting
+  bubble.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+}
+
+function appendError(msg) {
+  const msgs = document.getElementById('messages');
+  const row  = document.createElement('div');
+  row.className = 'message-row assistant';
+  row.innerHTML = `
+    <div class="avatar assistant">!</div>
+    <div class="bubble-wrap">
+      <div class="bubble" style="background:#fef2f2;border-color:#fca5a5;color:#dc2626">
+        <strong>Error:</strong> ${escapeHtml(msg)}
+      </div>
+    </div>`;
+  msgs.appendChild(row);
+  scrollToBottom();
+}
+
+function toggleThink(el) { el.classList.toggle('open'); }
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text);
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+}
+
+function copyFromBubble(btn) {
+  const bubble = btn.closest('.bubble-wrap').querySelector('.bubble');
+  navigator.clipboard.writeText(bubble.innerText || bubble.textContent);
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+}
+
+function scrollToBottom() {
+  const msgs = document.getElementById('messages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+           .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+// ═══════════════════════════════════════════════════════
+// Status check
+// ═══════════════════════════════════════════════════════
+async function checkStatus() {
+  try {
+    const res  = await fetch('/health');
+    const data = await res.json();
+    const dot  = document.getElementById('statusDot');
+    dot.className = 'status-dot ' + (data.orchestrator === 'connected' ? 'online' : '');
+    dot.title = data.orchestrator === 'connected' ? 'Orchestrator online' : 'Orchestrator offline';
+  } catch { /* ignore */ }
+}
+checkStatus();
+setInterval(checkStatus, 30000);
+
+// Update model hint on load (reflects warm/cold state from localStorage)
+const _hint = document.getElementById('modelHint');
+if (_hint) _hint.textContent = modelHintText();
+</script>
+</body>
+</html>

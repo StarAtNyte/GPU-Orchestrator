@@ -276,6 +276,50 @@ services:
       - backend-network
     restart: unless-stopped
 
+  qwen35-chat-worker:
+    build:
+      context: .
+      dockerfile: worker/qwen35-chat_worker/Dockerfile
+    container_name: qwen35-chat-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_HOST: etcd
+      ETCD_PORT: 2379
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: qwen35-chat-worker
+      APP_ID: qwen35-chat
+      HF_TOKEN: ${HF_TOKEN:-}
+      MODEL_DIR: /models
+      # Qwen3.5-35B-A3B Q4 GGUF (~22 GB) — fits in RTX 4090 24 GB
+      HF_REPO: unsloth/Qwen3.5-35B-A3B-GGUF
+      MODEL_FILE: Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf
+      N_CTX: "16384"
+      N_GPU_LAYERS: "99"
+      IDLE_TIMEOUT: "300"
+    volumes:
+      - ${HOME}/models/qwen35-chat:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - backend-network
+    restart: "no"   # Managed dynamically by orchestrator (exclusive_mode)
+
 volumes:
   postgres_data:
     driver: local

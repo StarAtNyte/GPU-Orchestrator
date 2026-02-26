@@ -118,6 +118,27 @@ services:
       retries: 3
       start_period: 10s
 
+  qwen35-chat-ui:
+    build:
+      context: ./qwen35-chat-ui
+      dockerfile: Dockerfile
+    container_name: qwen35-chat-ui
+    ports:
+      - "8867:7867"
+    environment:
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
+      - REDIS_HOST=172.17.0.1
+      - REDIS_PORT=16379
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7867/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 networks:
   frontend-network:
     driver: bridge
