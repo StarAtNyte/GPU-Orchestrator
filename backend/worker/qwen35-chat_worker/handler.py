@@ -46,13 +46,36 @@ WEB_SEARCH_TOOL = {
     "function": {
         "name": "web_search",
         "description": (
-            "Search the web for current, up-to-date information, news, or facts. "
-            "Use this when you need information that may have changed after your training cutoff."
+            "Search the web for current, up-to-date information, news, facts, blog posts, "
+            "GitHub repos, or anything not covered by arxiv. For research topics, use this "
+            "alongside arxiv_search to find blog posts, project pages, code releases, and "
+            "discussions that supplement the academic papers."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "The search query"}
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+ARXIV_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "arxiv_search",
+        "description": (
+            "Search arXiv for recent academic papers and preprints, sorted by submission date. "
+            "Use this for finding scientific research papers on technical topics. "
+            "For comprehensive research, combine with web_search to also get blog posts, "
+            "project pages, and code. Returns titles, authors, submission dates, and full abstracts."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search terms (e.g. 'monocular 3D Gaussian Splatting single image')"},
+                "max_results": {"type": "integer", "description": "Number of papers to return (default 5, max 10)"},
             },
             "required": ["query"],
         },
@@ -196,11 +219,65 @@ class Qwen35ChatHandler:
             for i, r in enumerate(results, 1):
                 lines.append(f"{i}. {r['title']}")
                 lines.append(f"   {r['href']}")
-                lines.append(f"   {r['body'][:400]}\n")
+                lines.append(f"   {r['body'][:250]}\n")
             return "\n".join(lines)
         except Exception as e:
             logger.error(f"Web search error: {e}")
             return f"Search failed: {e}"
+
+    def _arxiv_search(self, query: str, max_results: int = 5) -> str:
+        """Query the arXiv API and return structured paper results sorted by date."""
+        import urllib.parse
+        import urllib.request
+        import xml.etree.ElementTree as ET
+
+        max_results = min(int(max_results), 10)
+        try:
+            encoded = urllib.parse.quote(query)
+            url = (
+                f"http://export.arxiv.org/api/query?"
+                f"search_query=all:{encoded}"
+                f"&max_results={max_results}"
+                f"&sortBy=submittedDate&sortOrder=descending"
+            )
+            req = urllib.request.Request(url, headers={"User-Agent": "qwen35-chat-worker/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                content = resp.read().decode("utf-8")
+
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            root = ET.fromstring(content)
+            entries = root.findall("atom:entry", ns)
+
+            if not entries:
+                return f"No arXiv papers found for: {query}"
+
+            lines = [f"arXiv papers (sorted by date, newest first) for: {query}\n"]
+            for i, entry in enumerate(entries, 1):
+                title   = entry.find("atom:title",   ns)
+                summary = entry.find("atom:summary", ns)
+                pub     = entry.find("atom:published", ns)
+                pid     = entry.find("atom:id",      ns)
+                authors = entry.findall("atom:author", ns)
+
+                title_text   = (title.text   or "").strip().replace("\n", " ")
+                abstract     = (summary.text or "").strip().replace("\n", " ")[:300]
+                pub_date     = (pub.text or "")[:10]
+                paper_id     = (pid.text or "").strip()
+                author_names = [
+                    (a.find("atom:name", ns).text or "")
+                    for a in authors[:4]
+                    if a.find("atom:name", ns) is not None
+                ]
+                lines.append(f"{i}. {title_text}")
+                lines.append(f"   Date: {pub_date}")
+                lines.append(f"   Authors: {', '.join(author_names)}")
+                lines.append(f"   URL: {paper_id}")
+                lines.append(f"   Abstract: {abstract}\n")
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"arXiv search error: {e}")
+            return f"arXiv search failed: {e}"
 
     # ------------------------------------------------------------------
     # Streaming helper
@@ -370,16 +447,19 @@ class Qwen35ChatHandler:
                 f"{' +search' if enable_web_search else ''} | {len(messages)} msgs"
             )
 
-            tools             = [WEB_SEARCH_TOOL] if enable_web_search else None
+            tools             = [WEB_SEARCH_TOOL, ARXIV_SEARCH_TOOL] if enable_web_search else None
             working_messages  = list(messages)
             total_tokens      = 0
             final_text        = ""
+            MAX_TOOL_ROUNDS   = 5   # after this many search rounds, force a final response
 
-            for _round in range(6):   # up to 5 tool-call rounds + 1 final
+            for _round in range(MAX_TOOL_ROUNDS + 2):
+                # After MAX_TOOL_ROUNDS, strip tools so the model is forced to respond
+                active_tools = tools if (tools and _round < MAX_TOOL_ROUNDS) else None
                 text, n_tok, pending = self._stream_round(
                     stream_key, working_messages,
                     temperature, top_p, top_k, max_tokens, presence_penalty,
-                    enable_thinking, tools,
+                    enable_thinking, active_tools,
                 )
                 total_tokens += n_tok
 
@@ -406,22 +486,31 @@ class Qwen35ChatHandler:
 
                 # Execute each tool call
                 for tc in pending:
-                    if tc["name"] != "web_search":
-                        continue
                     try:
                         args = json.loads(tc["arguments"])
                     except json.JSONDecodeError:
                         args = {}
                     query = args.get("query", "")
 
-                    logger.info(f"[JOB {job_id}] web_search({query!r})")
-                    self._pub(stream_key, "tool_call",
-                              json.dumps({"name": "web_search", "query": query}))
+                    if tc["name"] == "web_search":
+                        logger.info(f"[JOB {job_id}] web_search({query!r})")
+                        self._pub(stream_key, "tool_call",
+                                  json.dumps({"name": "web_search", "query": query}))
+                        result = self._web_search(query)
+                        self._pub(stream_key, "tool_result",
+                                  json.dumps({"name": "web_search", "query": query}))
 
-                    result = self._web_search(query)
+                    elif tc["name"] == "arxiv_search":
+                        max_r = args.get("max_results", 8)
+                        logger.info(f"[JOB {job_id}] arxiv_search({query!r}, max={max_r})")
+                        self._pub(stream_key, "tool_call",
+                                  json.dumps({"name": "arxiv_search", "query": query}))
+                        result = self._arxiv_search(query, max_r)
+                        self._pub(stream_key, "tool_result",
+                                  json.dumps({"name": "arxiv_search", "query": query}))
 
-                    self._pub(stream_key, "tool_result",
-                              json.dumps({"name": "web_search", "query": query}))
+                    else:
+                        result = f"Unknown tool: {tc['name']}"
 
                     working_messages.append({
                         "role":         "tool",

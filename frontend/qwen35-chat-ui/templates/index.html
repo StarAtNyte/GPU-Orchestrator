@@ -486,29 +486,55 @@
     [data-theme="light"] .think-header { color: #92400e; }
     [data-theme="light"] .think-body { color: #78350f; }
 
-    /* ── Tool call / result ── */
-    .tool-event {
-      display: flex; align-items: center; gap: 8px;
-      padding: 6px 12px; margin: 2px 0;
-      background: var(--bg-elevated);
+    /* ── Tool search group ── */
+    .tool-group {
+      margin: 4px 0 8px;
       border: 1px solid var(--border-color);
       border-radius: var(--radius-xs);
-      font-size: 12px; color: var(--text-secondary);
+      overflow: hidden;
+      font-size: 12px;
     }
-    .tool-event.searching {
+    .tool-group-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      user-select: none;
+    }
+    .tool-group.searching .tool-group-header {
+      color: var(--primary);
       background: var(--primary-light);
       border-color: var(--primary);
-      color: var(--primary);
     }
-    .tool-event.result {
-      background: rgba(52,211,153,0.08);
-      border-color: rgba(52,211,153,0.25);
-      color: #34d399;
+    .tool-group.done .tool-group-header { cursor: pointer; }
+    .tool-group.done .tool-group-header:hover { background: var(--bg-input); }
+    .tool-spinner {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor; flex-shrink: 0;
+      animation: tool-pulse 1s ease-in-out infinite;
     }
-    .tool-event-query {
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      max-width: 300px; font-style: italic;
+    @keyframes tool-pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.35; transform: scale(0.75); }
     }
+    .tool-group-label { flex: 1; }
+    .tool-chevron { font-size: 10px; opacity: 0.5; transition: transform 0.18s; }
+    .tool-group.expanded .tool-chevron { transform: rotate(180deg); }
+    .tool-group-queries { border-top: 1px solid var(--border-color); }
+    .tool-group-query {
+      padding: 4px 12px 4px 28px;
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      border-bottom: 1px solid var(--border-color);
+      position: relative;
+    }
+    .tool-group-query:last-child { border-bottom: none; }
+    .tool-group-query::before {
+      content: '·'; position: absolute; left: 14px;
+      color: var(--primary); font-size: 14px; line-height: 1.2;
+    }
+    .tool-group-query.done::before { content: '·'; color: #34d399; }
 
     /* ── Streaming cursor ── */
     .cursor {
@@ -536,8 +562,19 @@
       padding: 14px 16px;
       overflow-x: auto;
       margin: 8px 0;
+      position: relative;
     }
     .bubble pre code { background: none; padding: 0; color: var(--pre-text); font-size: 12.5px; }
+    .code-copy-btn {
+      position: absolute; top: 7px; right: 8px;
+      background: var(--bg-elevated); border: 1px solid var(--border-color);
+      color: var(--text-secondary); border-radius: 5px;
+      padding: 2px 8px; font-size: 11px; cursor: pointer; opacity: 0;
+      transition: opacity 0.15s, background 0.15s;
+      font-family: inherit; line-height: 1.6;
+    }
+    .bubble pre:hover .code-copy-btn { opacity: 1; }
+    .code-copy-btn:hover { background: var(--bg-input); color: var(--text-primary); }
     .katex-block { overflow-x: auto; margin: 10px 0; text-align: center; }
     .bubble .katex { font-size: 1em; }
     .bubble ul, .bubble ol { padding-left: 20px; margin: 6px 0; }
@@ -961,7 +998,7 @@
       </div>
     </div>
 
-    <div class="settings-section">
+    <div class="settings-section" style="display:none">
       <div class="settings-label">Tools</div>
       <div class="toggle-row">
         <div>
@@ -1473,7 +1510,7 @@ async function sendMessage(prefillText) {
       return;
     }
 
-    document.getElementById('statusText').textContent = 'Waiting for worker…';
+    document.getElementById('statusText').textContent = '';
 
     const jobId = data.job_id;
     const { thinkEl, toolEventsEl, responseEl, bubbleEl, wrapEl } = appendAssistantBubble();
@@ -1482,6 +1519,10 @@ async function sendMessage(prefillText) {
     let responseBuf = '';
     let inThink     = false;
     let thinkDone   = false;
+    let toolGroupEl     = null;
+    let toolQueryListEl = null;
+    let toolQueryEls    = [];
+    let toolSearchCount = 0;
 
     currentEventSource = new EventSource(`api/stream/${jobId}`);
 
@@ -1510,28 +1551,56 @@ async function sendMessage(prefillText) {
       }
 
       if (msg.tool_call) {
-        const tc = msg.tool_call;
-        const query = tc.query || tc.arguments?.query || JSON.stringify(tc);
-        const ev = document.createElement('div');
-        ev.className = 'tool-event searching';
-        ev.innerHTML = `<span>🔍</span><span>Searching: </span><span class="tool-event-query">${escapeHtml(query)}</span>`;
-        toolEventsEl.appendChild(ev);
+        const toolName = msg.tool_call.name || 'web_search';
+        const query = msg.tool_call.query || msg.tool_call.arguments?.query || JSON.stringify(msg.tool_call);
+        if (!toolGroupEl) {
+          const label = toolName === 'arxiv_search' ? 'Searching arXiv' : 'Searching the web';
+          toolGroupEl = document.createElement('div');
+          toolGroupEl.className = 'tool-group searching';
+          toolGroupEl.dataset.baseLabel = toolName === 'arxiv_search' ? 'Searched arXiv' : 'Searched the web';
+          toolGroupEl.innerHTML = `
+            <div class="tool-group-header">
+              <span class="tool-spinner"></span>
+              <span class="tool-group-label">${label}</span>
+              <span class="tool-chevron">▾</span>
+            </div>
+            <div class="tool-group-queries"></div>`;
+          toolEventsEl.appendChild(toolGroupEl);
+          toolQueryListEl = toolGroupEl.querySelector('.tool-group-queries');
+        }
+        const qEl = document.createElement('div');
+        qEl.className = 'tool-group-query';
+        qEl.textContent = query;
+        toolQueryListEl.appendChild(qEl);
+        toolQueryEls.push(qEl);
+        toolSearchCount++;
         scrollToBottom();
         return;
       }
 
       if (msg.tool_result) {
-        const searching = toolEventsEl.querySelector('.tool-event.searching:last-child');
-        if (searching) {
-          searching.className = 'tool-event result';
-          searching.innerHTML = `<span>✅</span><span>Search complete</span>`;
-        }
+        const pending = toolQueryEls.filter(q => !q.classList.contains('done'));
+        if (pending.length) pending[0].classList.add('done');
         scrollToBottom();
         return;
       }
 
       if (msg.content !== undefined) {
         document.getElementById('statusText').textContent = 'Generating…';
+        // Collapse the search group into a summary on first response token
+        if (toolGroupEl && toolGroupEl.classList.contains('searching')) {
+          toolGroupEl.classList.replace('searching', 'done');
+          toolGroupEl.querySelector('.tool-spinner').style.display = 'none';
+          const n = toolSearchCount;
+          const baseLabel = toolGroupEl.dataset.baseLabel || 'Searched the web';
+          toolGroupEl.querySelector('.tool-group-label').textContent =
+            `${baseLabel} — ${n} quer${n === 1 ? 'y' : 'ies'}`;
+          toolQueryListEl.style.display = 'none';
+          toolGroupEl.querySelector('.tool-group-header').addEventListener('click', () => {
+            const open = toolGroupEl.classList.toggle('expanded');
+            toolQueryListEl.style.display = open ? 'block' : 'none';
+          });
+        }
         const tok = msg.content;
 
         if (!thinkDone) {
@@ -1604,6 +1673,7 @@ function retryLast() {
 function startEditMessage(rowEl, histIdx) {
   const bubble = rowEl.querySelector('.bubble');
   const original = history[histIdx];
+  if (!original) return;
   const originalText = typeof original.content === 'string'
     ? original.content
     : original.content.filter(p => p.type === 'text').map(p => p.text).join('\n');
@@ -1775,6 +1845,7 @@ function _flushStreamRender() {
   _streamRenderEl.querySelectorAll('pre code').forEach(b => {
     if (!b.dataset.highlighted) { hljs.highlightElement(b); b.dataset.highlighted = '1'; }
   });
+  addCodeCopyButtons(_streamRenderEl);
   if (cursor) bubble.appendChild(cursor);
 }
 
@@ -1797,6 +1868,7 @@ function finaliseResponse(el, text, wrapEl) {
   bubble.innerHTML = '';
   bubble.appendChild(rendered);
   bubble.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+  addCodeCopyButtons(bubble);
 }
 
 function appendError(msg) {
@@ -1821,6 +1893,22 @@ function copyBubbleText(btn) {
   navigator.clipboard.writeText(bubble.innerText || bubble.textContent);
   btn.textContent = 'Copied!';
   setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+}
+
+function addCodeCopyButtons(container) {
+  container.querySelectorAll('pre code').forEach(code => {
+    const pre = code.parentElement;
+    if (pre.querySelector('.code-copy-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(code.innerText || code.textContent);
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    });
+    pre.appendChild(btn);
+  });
 }
 
 function scrollToBottom() {
