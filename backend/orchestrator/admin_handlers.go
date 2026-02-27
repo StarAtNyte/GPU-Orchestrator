@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // AdminJobsResponse represents the response for listing jobs
@@ -239,7 +241,10 @@ func adminRetryJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Parse params
 	var paramsMap map[string]string
-	json.Unmarshal(params, &paramsMap)
+	if err := json.Unmarshal(params, &paramsMap); err != nil {
+		log.Printf("[WARN] Failed to unmarshal job params for retry %s: %v, using empty map", originalJobID, err)
+		paramsMap = map[string]string{}
+	}
 
 	// Validate app exists
 	appConfig, exists := appRegistry[appID]
@@ -248,8 +253,8 @@ func adminRetryJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create new job
-	newJobID := fmt.Sprintf("%s-retry-%d", originalJobID[:8], time.Now().Unix())
+	// Create new job with a valid UUID
+	newJobID := uuid.New().String()
 	paramsJSON, _ := json.Marshal(paramsMap)
 
 	_, err = db.Exec(`
@@ -425,6 +430,16 @@ func adminWorkersStatusHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// isValidWorkerName returns true only if name matches a known ContainerName in appRegistry.
+func isValidWorkerName(name string) bool {
+	for _, app := range appRegistry {
+		if app.ContainerName == name {
+			return true
+		}
+	}
+	return false
+}
+
 // AdminWorkerActionHandler handles worker control actions
 func adminWorkerActionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -444,6 +459,14 @@ func adminWorkerActionHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
+	}
+
+	// Validate worker name for actions that use it (prevents command injection)
+	if req.Action == "start" || req.Action == "switch" {
+		if !isValidWorkerName(req.WorkerName) {
+			http.Error(w, "Invalid worker name", http.StatusBadRequest)
+			return
+		}
 	}
 
 	var cmd *exec.Cmd

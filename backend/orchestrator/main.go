@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -32,7 +33,64 @@ var (
 	ctx         = context.Background()
 	appRegistry map[string]AppConfig // App Registry loaded from YAML
 	// workers is declared in worker_manager.go
+
+	adminAPIKey string // Set from ADMIN_API_KEY env var
+
+	// Per-username rate limiter (sliding window, 20 req/min)
+	rateLimiter sync.Map // map[string]*rateLimiterEntry
 )
+
+type rateLimiterEntry struct {
+	mu         sync.Mutex
+	timestamps []time.Time
+}
+
+// checkRateLimit returns true if the request is allowed, false if rate limited.
+func checkRateLimit(username string) bool {
+	val, _ := rateLimiter.LoadOrStore(username, &rateLimiterEntry{})
+	entry := val.(*rateLimiterEntry)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Minute)
+
+	// Filter timestamps within the last minute
+	filtered := entry.timestamps[:0]
+	for _, t := range entry.timestamps {
+		if t.After(cutoff) {
+			filtered = append(filtered, t)
+		}
+	}
+	entry.timestamps = filtered
+
+	if len(entry.timestamps) >= 20 {
+		return false
+	}
+	entry.timestamps = append(entry.timestamps, now)
+	return true
+}
+
+// isValidUUID returns true if s is a valid UUID.
+func isValidUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
+// adminAuthMiddleware enforces X-Admin-Key header when ADMIN_API_KEY is set.
+func adminAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if adminAPIKey == "" {
+			next(w, r)
+			return
+		}
+		if r.Header.Get("X-Admin-Key") != adminAPIKey {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
 
 // HTTP Request Payload
 type SubmitRequest struct {
@@ -115,6 +173,15 @@ func main() {
 	go monitorJobCompletions()
 
 	// 10. Start HTTP Server
+
+	// Read admin API key from environment
+	adminAPIKey = os.Getenv("ADMIN_API_KEY")
+	if adminAPIKey == "" {
+		log.Println("[WARNING] ADMIN_API_KEY is not set — /admin/* endpoints are unprotected")
+	} else {
+		log.Println("[INFO] Admin API key authentication enabled")
+	}
+
 	http.HandleFunc("/submit", submitJobHandler)
 	http.HandleFunc("/status/", statusHandler)
 	http.HandleFunc("/workers", workersHandler)
@@ -124,9 +191,9 @@ func main() {
 	http.HandleFunc("/user/jobs", userJobsHandler)
 	http.HandleFunc("/user/jobs/", userJobDetailsHandler)
 
-	// Admin API endpoints
-	http.HandleFunc("/admin/jobs", adminJobsHandler)
-	http.HandleFunc("/admin/jobs/", func(w http.ResponseWriter, r *http.Request) {
+	// Admin API endpoints (protected by adminAuthMiddleware)
+	http.HandleFunc("/admin/jobs", adminAuthMiddleware(adminJobsHandler))
+	http.HandleFunc("/admin/jobs/", adminAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/cancel") {
 			adminCancelJobHandler(w, r)
 		} else if strings.HasSuffix(r.URL.Path, "/retry") {
@@ -134,13 +201,13 @@ func main() {
 		} else {
 			http.NotFound(w, r)
 		}
-	})
-	http.HandleFunc("/admin/workers/status", adminWorkersStatusHandler)
-	http.HandleFunc("/admin/workers/action", adminWorkerActionHandler)
-	http.HandleFunc("/admin/metrics/gpu", adminGPUMetricsHandler)
-	http.HandleFunc("/admin/metrics/latest", adminLatestMetricsHandler)
-	http.HandleFunc("/admin/metrics/summary", adminSummaryHandler)
-	http.HandleFunc("/admin/config", adminConfigHandler)
+	}))
+	http.HandleFunc("/admin/workers/status", adminAuthMiddleware(adminWorkersStatusHandler))
+	http.HandleFunc("/admin/workers/action", adminAuthMiddleware(adminWorkerActionHandler))
+	http.HandleFunc("/admin/metrics/gpu", adminAuthMiddleware(adminGPUMetricsHandler))
+	http.HandleFunc("/admin/metrics/latest", adminAuthMiddleware(adminLatestMetricsHandler))
+	http.HandleFunc("/admin/metrics/summary", adminAuthMiddleware(adminSummaryHandler))
+	http.HandleFunc("/admin/config", adminAuthMiddleware(adminConfigHandler))
 
 	log.Println("[INFO] Orchestrator running on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -181,6 +248,12 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	// Validate username
 	if req.Username == "" {
 		http.Error(w, "Username is required", http.StatusBadRequest)
+		return
+	}
+
+	// Rate limit: 20 submissions per minute per username
+	if !checkRateLimit(req.Username) {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 
@@ -402,6 +475,10 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing job_id", http.StatusBadRequest)
 		return
 	}
+	if !isValidUUID(jobID) {
+		http.Error(w, "Invalid job_id format", http.StatusBadRequest)
+		return
+	}
 
 	var status string
 	var createdAt, completedAt sql.NullTime
@@ -597,6 +674,10 @@ func userJobDetailsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing job_id", http.StatusBadRequest)
 		return
 	}
+	if !isValidUUID(jobID) {
+		http.Error(w, "Invalid job_id format", http.StatusBadRequest)
+		return
+	}
 
 	// Get username from query parameter (for authorization)
 	username := r.URL.Query().Get("username")
@@ -740,14 +821,12 @@ func runMigrations(db *sql.DB) {
 	}
 }
 
-// getWorkerNameForApp returns the worker name for a given app_id
+// getWorkerNameForApp returns the container name for a given app_id from the registry.
 func getWorkerNameForApp(appID string) string {
-	mapping := map[string]string{
-		"sdxl-image-gen":   "sdxl-worker",
-		"z-image":          "z-image-worker",
-		"qwen-image-edit":  "qwen-image-edit-worker",
+	if app, ok := appRegistry[appID]; ok {
+		return app.ContainerName
 	}
-	return mapping[appID]
+	return ""
 }
 
 // proxyToModal forwards a job request to a Modal endpoint

@@ -70,6 +70,12 @@ services:
       - "8811:8000"
     environment:
       - ORCHESTRATOR_URL=http://172.17.0.1:8890
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      - POSTGRES_HOST=${POSTGRES_HOST:-172.17.0.1}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5433}
+      - POSTGRES_USER=${POSTGRES_USER:-orchestrator}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-orchestrator}
+      - POSTGRES_DB=${POSTGRES_DB:-gpu_orchestrator}
     networks:
       - frontend-network
     restart: unless-stopped

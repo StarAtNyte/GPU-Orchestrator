@@ -6,6 +6,7 @@ Follows the same pattern as the other GPU workers (Redis Streams + etcd + Postgr
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 import time
@@ -40,6 +41,17 @@ ETCD_PORT = int(os.getenv("ETCD_PORT", "2379"))
 STREAM_KEY = "jobs:qwen35-chat"
 GROUP_NAME = "qwen35-chat-workers"
 WORKER_ID = os.getenv("WORKER_ID", "qwen35-chat-worker-1")
+
+shutdown_flag = threading.Event()
+
+
+def handle_shutdown(sig, frame):
+    logger.info(f"Received signal {sig}, shutting down...")
+    shutdown_flag.set()
+
+
+signal.signal(signal.SIGTERM, handle_shutdown)
+signal.signal(signal.SIGINT, handle_shutdown)
 
 handler: Qwen35ChatHandler = None
 
@@ -231,7 +243,7 @@ def main():
 
     logger.info(f"Listening on '{STREAM_KEY}'...")
 
-    while True:
+    while not shutdown_flag.is_set():
         try:
             entries = r.xreadgroup(GROUP_NAME, WORKER_ID, {STREAM_KEY: ">"}, count=1, block=2000)
             if entries:
@@ -242,12 +254,14 @@ def main():
                         finally:
                             r.xack(STREAM_KEY, GROUP_NAME, msg_id)
                             r.xdel(STREAM_KEY, msg_id)
-        except KeyboardInterrupt:
-            logger.info("Shutting down")
-            break
+        except redis.RedisError as e:
+            logger.error(f"Redis error in main loop: {e}")
+            time.sleep(1)
         except Exception as e:
             logger.error(f"Main loop error: {e}", exc_info=True)
             time.sleep(1)
+
+    logger.info("Shutting down")
 
 
 if __name__ == "__main__":

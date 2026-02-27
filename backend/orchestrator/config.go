@@ -51,9 +51,21 @@ func LoadAppRegistry(filePath string) (map[string]AppConfig, error) {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
 
-	// Convert to map for easy lookups
+	// Validate and convert to map for easy lookups
 	appMap := make(map[string]AppConfig)
 	for _, app := range registry.Apps {
+		if app.ID == "" {
+			return nil, fmt.Errorf("app entry has empty id")
+		}
+		if app.Type != "local" && app.Type != "modal" {
+			return nil, fmt.Errorf("app %q has invalid type %q (must be 'local' or 'modal')", app.ID, app.Type)
+		}
+		if app.StartupTimeoutSeconds < 0 {
+			return nil, fmt.Errorf("app %q has negative startup_timeout_seconds", app.ID)
+		}
+		if app.IdleTimeoutSeconds < 0 {
+			return nil, fmt.Errorf("app %q has negative idle_timeout_seconds", app.ID)
+		}
 		appMap[app.ID] = app
 		log.Printf("[INFO] Loaded app: %s (%s) - Type: %s", app.ID, app.Name, app.Type)
 	}

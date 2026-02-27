@@ -28,8 +28,16 @@ from auth import (
 
 # Configuration
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator:8080")
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 SESSION_COOKIE_NAME = "admin_session"
 SESSION_MAX_AGE = 86400  # 24 hours
+
+
+def _admin_headers() -> dict:
+    """Return auth headers for orchestrator /admin/* calls."""
+    if ADMIN_API_KEY:
+        return {"X-Admin-Key": ADMIN_API_KEY}
+    return {}
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -271,6 +279,7 @@ async def list_jobs(
         response = requests.get(
             f"{ORCHESTRATOR_URL}/admin/jobs",
             params=params,
+            headers=_admin_headers(),
             timeout=10
         )
         response.raise_for_status()
@@ -298,6 +307,7 @@ async def cancel_job(
 
         response = requests.post(
             f"{ORCHESTRATOR_URL}/admin/jobs/{job_id}/cancel",
+            headers=_admin_headers(),
             timeout=10
         )
         response.raise_for_status()
@@ -325,6 +335,7 @@ async def retry_job(
 
         response = requests.post(
             f"{ORCHESTRATOR_URL}/admin/jobs/{job_id}/retry",
+            headers=_admin_headers(),
             timeout=10
         )
         response.raise_for_status()
@@ -349,6 +360,7 @@ async def stream_jobs(
                 response = requests.get(
                     f"{ORCHESTRATOR_URL}/admin/jobs",
                     params={"limit": 20, "offset": 0},
+                    headers=_admin_headers(),
                     timeout=5
                 )
                 if response.ok:
@@ -369,6 +381,7 @@ async def get_workers_status(admin: dict = Depends(get_current_admin)):
     try:
         response = requests.get(
             f"{ORCHESTRATOR_URL}/admin/workers/status",
+            headers=_admin_headers(),
             timeout=10
         )
         response.raise_for_status()
@@ -401,6 +414,7 @@ async def worker_action(
         response = requests.post(
             f"{ORCHESTRATOR_URL}/admin/workers/action",
             json=data,
+            headers=_admin_headers(),
             timeout=60
         )
         response.raise_for_status()
@@ -423,6 +437,7 @@ async def stream_workers(
             try:
                 response = requests.get(
                     f"{ORCHESTRATOR_URL}/admin/workers/status",
+                    headers=_admin_headers(),
                     timeout=5
                 )
                 if response.ok:
@@ -444,6 +459,7 @@ async def get_config(admin: dict = Depends(get_current_admin)):
     try:
         response = requests.get(
             f"{ORCHESTRATOR_URL}/admin/config",
+            headers=_admin_headers(),
             timeout=10
         )
         response.raise_for_status()

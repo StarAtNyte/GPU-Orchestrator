@@ -7,7 +7,7 @@ import requests
 import os
 import json
 import asyncio
-from typing import List
+from typing import List, Any, Union
 
 app = FastAPI(title="Qwen3.5 Chat")
 templates = Jinja2Templates(directory="templates")
@@ -20,7 +20,7 @@ APP_ID = "qwen35-chat"
 
 class Message(BaseModel):
     role: str
-    content: str
+    content: Union[str, List[Any]]  # str for text-only, list for multimodal
 
 
 class ChatRequest(BaseModel):
@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     max_tokens: int = 8192
     presence_penalty: float = 1.5
     enable_thinking: bool = False
+    enable_web_search: bool = False
     username: str = "local"
 
 
@@ -55,6 +56,7 @@ async def health():
 @app.post("/api/chat")
 async def submit_chat(chat_request: ChatRequest):
     """Submit a chat job to the orchestrator. Returns job_id immediately."""
+    # Serialize messages — content may be str or list (multimodal)
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     try:
         response = requests.post(
@@ -70,6 +72,7 @@ async def submit_chat(chat_request: ChatRequest):
                     "max_tokens": str(chat_request.max_tokens),
                     "presence_penalty": str(chat_request.presence_penalty),
                     "enable_thinking": "true" if chat_request.enable_thinking else "false",
+                    "enable_web_search": "true" if chat_request.enable_web_search else "false",
                 },
             },
             timeout=30,
@@ -88,9 +91,12 @@ async def stream_response(job_id: str, request: Request):
     SSE endpoint. Reads from Redis Stream  chat-stream:{job_id}
     and forwards tokens to the browser as Server-Sent Events.
 
-    The worker publishes  {type: token, content: <text>}  for each token
-    and  {type: done}  when finished.
-    Waits up to 3 minutes to allow for model loading time.
+    Event types from worker:
+      token       → {content: <text>}
+      tool_call   → {tool_call: {name, arguments}}
+      tool_result → {tool_result: {name, result}}
+      done        → {done: true}
+      error       → {error: <message>}
     """
 
     async def generate():
@@ -99,7 +105,7 @@ async def stream_response(job_id: str, request: Request):
         )
         stream_key = f"chat-stream:{job_id}"
         last_id = "0-0"
-        deadline = asyncio.get_event_loop().time() + 600  # 10-minute timeout (covers llama-server model load ~2min + generation)
+        deadline = asyncio.get_event_loop().time() + 600  # 10-minute timeout
 
         try:
             while True:
@@ -117,7 +123,6 @@ async def stream_response(job_id: str, request: Request):
                     break
 
                 if not entries:
-                    # No tokens yet — send SSE keepalive comment and keep waiting
                     yield ": waiting\n\n"
                     continue
 
@@ -125,11 +130,30 @@ async def stream_response(job_id: str, request: Request):
                     for msg_id, fields in messages:
                         last_id = msg_id
                         msg_type = fields.get("type", "")
+
                         if msg_type == "token":
                             yield f"data: {json.dumps({'content': fields.get('content', '')})}\n\n"
+
+                        elif msg_type == "tool_call":
+                            # content is JSON-encoded {name, arguments}
+                            try:
+                                payload = json.loads(fields.get("content", "{}"))
+                            except Exception:
+                                payload = {"name": "unknown", "arguments": {}}
+                            yield f"data: {json.dumps({'tool_call': payload})}\n\n"
+
+                        elif msg_type == "tool_result":
+                            # content is JSON-encoded {name, result}
+                            try:
+                                payload = json.loads(fields.get("content", "{}"))
+                            except Exception:
+                                payload = {"name": "unknown", "result": ""}
+                            yield f"data: {json.dumps({'tool_result': payload})}\n\n"
+
                         elif msg_type == "done":
                             yield f"data: {json.dumps({'done': True})}\n\n"
                             return
+
                         elif msg_type == "error":
                             yield f"data: {json.dumps({'error': fields.get('content', 'Unknown error')})}\n\n"
                             return
@@ -145,6 +169,27 @@ async def stream_response(job_id: str, request: Request):
             "Connection": "keep-alive",
         },
     )
+
+
+@app.get("/api/warmup")
+async def warmup():
+    """Submit a warmup job to pre-load the model. Returns job_id to track via SSE."""
+    try:
+        response = requests.post(
+            f"{ORCHESTRATOR_URL}/submit",
+            json={
+                "app_id": APP_ID,
+                "username": "system",
+                "params": {"warmup": "true"},
+            },
+            timeout=30,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return {"success": True, "job_id": data["job_id"]}
+        return {"success": False, "error": f"Orchestrator returned {response.status_code}: {response.text}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/status/{job_id}")

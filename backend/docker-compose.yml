@@ -80,6 +80,7 @@ services:
       APP_REGISTRY_PATH: /app/config/apps.yaml
       DOCKER_HOST: unix:///var/run/docker.sock
       NVIDIA_VISIBLE_DEVICES: all
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
     ports:
       - "8890:8080"
     volumes:

@@ -53,9 +53,10 @@ class GPUMetricsCollector:
         """Get PostgreSQL database connection."""
         return psycopg2.connect(
             host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
             database=os.getenv("POSTGRES_DB", "gpu_orchestrator"),
-            user=os.getenv("POSTGRES_USER", "admin"),
-            password=os.getenv("POSTGRES_PASSWORD", "admin123")
+            user=os.getenv("POSTGRES_USER", "orchestrator"),
+            password=os.getenv("POSTGRES_PASSWORD", "orchestrator")
         )
 
     def collect_metrics(self) -> List[Dict]:

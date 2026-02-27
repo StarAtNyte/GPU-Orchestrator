@@ -4,6 +4,7 @@ Isolated worker for z-image jobs
 """
 
 import os
+import signal
 import sys
 import time
 import logging
@@ -39,6 +40,17 @@ ETCD_PORT = int(os.getenv("ETCD_PORT", "2379"))
 STREAM_KEY = "jobs:z-image"
 GROUP_NAME = "z-image-workers"
 WORKER_ID = os.getenv("WORKER_ID", "z-image-worker-1")
+
+shutdown_flag = threading.Event()
+
+
+def handle_shutdown(sig, frame):
+    logger.info(f"Received signal {sig}, shutting down...")
+    shutdown_flag.set()
+
+
+signal.signal(signal.SIGTERM, handle_shutdown)
+signal.signal(signal.SIGINT, handle_shutdown)
 
 # Import handler
 from handler import ZImageHandler
@@ -305,7 +317,7 @@ def main():
 
     logger.info("[STARTUP] Pending messages processed, entering main loop...")
 
-    while True:
+    while not shutdown_flag.is_set():
         try:
             # Read from stream
             entries = r.xreadgroup(
@@ -328,12 +340,14 @@ def main():
                             r.xdel(STREAM_KEY, message_id)
                             logger.info(f"[CLEANUP] Removed message {message_id} from stream")
 
-        except KeyboardInterrupt:
-            logger.info("Shutting down worker...")
-            break
+        except redis.RedisError as e:
+            logger.error(f"Redis error in main loop: {e}")
+            time.sleep(1)
         except Exception as e:
             logger.error(f"Error in main loop: {e}", exc_info=True)
             time.sleep(1)
+
+    logger.info("Shutting down worker...")
 
 
 if __name__ == "__main__":
