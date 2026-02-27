@@ -34,7 +34,7 @@ MMPROJ_FILE  = os.getenv("MMPROJ_FILE",  "mmproj-F16.gguf")
 MODEL_PATH   = os.path.join(MODEL_DIR, MODEL_FILE)
 MMPROJ_PATH  = os.path.join(MODEL_DIR, MMPROJ_FILE)
 
-N_CTX           = int(os.getenv("N_CTX",          "16384"))
+N_CTX           = int(os.getenv("N_CTX",          "32768"))
 N_GPU_LAYERS    = int(os.getenv("N_GPU_LAYERS",    "99"))
 N_THREADS       = int(os.getenv("N_THREADS",       "8"))
 IDLE_TIMEOUT    = int(os.getenv("IDLE_TIMEOUT",    "300"))
@@ -114,6 +114,9 @@ class Qwen35ChatHandler:
                 "--n-gpu-layers",str(N_GPU_LAYERS),
                 "--threads",     str(N_THREADS),
                 "--parallel",    "1",          # single slot — reduces KV/rs cache, prevents OOM
+                "--flash-attn",  "on",        # halves KV cache VRAM, enables larger context
+                "--cache-type-k", "q8_0",     # quantize KV cache for more headroom
+                "--cache-type-v", "q8_0",
                 "--port",        str(SERVER_PORT),
                 "--host",        "127.0.0.1",
             ]
@@ -249,6 +252,12 @@ class Qwen35ChatHandler:
             f"{SERVER_URL}/v1/chat/completions",
             json=body, stream=True, timeout=600,
         )
+        if resp.status_code == 400:
+            detail = resp.text[:500]
+            raise RuntimeError(
+                f"Input too long for model context ({N_CTX} tokens). "
+                f"Try shorter messages or fewer attached files. Server: {detail}"
+            )
         resp.raise_for_status()
 
         parts: List[str] = []

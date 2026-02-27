@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>AI Chat Initial Screen</title>
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3713ec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#131022",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for webkit browsers */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2a2444;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b3267;
+        }
+    </style>
+</head>
+
+<body
+    class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen flex overflow-hidden">
+    <!-- Sidebar -->
+    <aside
+        class="flex w-72 flex-col justify-between border-r border-slate-200 dark:border-[#2a2444] bg-white dark:bg-[#141122] p-4 transition-all duration-300">
+        <!-- Top Section -->
+        <div class="flex flex-col gap-6">
+            <div class="flex items-center justify-between px-2">
+                <div class="flex flex-col">
+                    <h1 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">OpenAI Chat</h1>
+                    <p class="text-xs font-medium text-slate-500 dark:text-[#9b92c9]">v1.2.0</p>
+                </div>
+                <button
+                    class="text-slate-400 hover:text-slate-600 dark:text-[#9b92c9] dark:hover:text-white transition-colors">
+                    <span class="material-symbols-outlined">dock_to_left</span>
+                </button>
+            </div>
+            <button
+                class="group flex items-center gap-3 w-full px-4 py-3 rounded-xl bg-slate-100 dark:bg-[#292348] hover:bg-slate-200 dark:hover:bg-[#3b3267] transition-all border border-transparent hover:border-slate-300 dark:hover:border-[#4c4285]">
+                <span class="material-symbols-outlined text-primary dark:text-white">add</span>
+                <span class="text-sm font-semibold text-slate-700 dark:text-white">New Chat</span>
+            </button>
+            <div class="flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-320px)] pr-2">
+                <p class="px-3 text-xs font-semibold text-slate-400 dark:text-[#6b6299] uppercase tracking-wider mb-2">
+                    Recent</p>
+                <button
+                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1933] group text-left transition-colors">
+                    <span
+                        class="material-symbols-outlined text-slate-400 group-hover:text-slate-600 dark:text-[#58508d] dark:group-hover:text-[#9b92c9] text-[20px]">chat_bubble_outline</span>
+                    <span
+                        class="text-sm font-medium text-slate-600 dark:text-[#9b92c9] group-hover:text-slate-900 dark:group-hover:text-white truncate">Project
+                        architecture...</span>
+                </button>
+                <button
+                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1933] group text-left transition-colors">
+                    <span
+                        class="material-symbols-outlined text-slate-400 group-hover:text-slate-600 dark:text-[#58508d] dark:group-hover:text-[#9b92c9] text-[20px]">chat_bubble_outline</span>
+                    <span
+                        class="text-sm font-medium text-slate-600 dark:text-[#9b92c9] group-hover:text-slate-900 dark:group-hover:text-white truncate">React
+                        hooks explanation</span>
+                </button>
+                <button
+                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1933] group text-left transition-colors">
+                    <span
+                        class="material-symbols-outlined text-slate-400 group-hover:text-slate-600 dark:text-[#58508d] dark:group-hover:text-[#9b92c9] text-[20px]">chat_bubble_outline</span>
+                    <span
+                        class="text-sm font-medium text-slate-600 dark:text-[#9b92c9] group-hover:text-slate-900 dark:group-hover:text-white truncate">Email
+                        draft for marketing</span>
+                </button>
+            </div>
+        </div>
+        <!-- Bottom Section -->
+        <div class="flex flex-col gap-2 pt-4 border-t border-slate-200 dark:border-[#2a2444]">
+            <button
+                class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-white shadow-lg shadow-primary/30 hover:bg-primary/90 hover:shadow-primary/40 transition-all">
+                <span class="material-symbols-outlined text-[20px]">spark</span>
+                <span>Upgrade Plan</span>
+            </button>
+            <div class="flex flex-col gap-1 mt-2">
+                <button
+                    class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1933] text-slate-600 dark:text-[#9b92c9] hover:text-slate-900 dark:hover:text-white transition-colors">
+                    <span class="material-symbols-outlined text-[20px]">history</span>
+                    <span class="text-sm font-medium">History</span>
+                </button>
+                <button
+                    class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1933] text-slate-600 dark:text-[#9b92c9] hover:text-slate-900 dark:hover:text-white transition-colors">
+                    <span class="material-symbols-outlined text-[20px]">settings</span>
+                    <span class="text-sm font-medium">Settings</span>
+                </button>
+                <!-- Profile Snippet -->
+                <div
+                    class="flex items-center gap-3 px-2 py-2 mt-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1e1933] cursor-pointer transition-colors">
+                    <div
+                        class="h-8 w-8 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-white text-xs font-bold">
+                        JD</div>
+                    <div class="flex flex-col overflow-hidden">
+                        <span class="text-sm font-bold text-slate-900 dark:text-white truncate">John Doe</span>
+                        <span class="text-xs text-slate-500 dark:text-[#6b6299] truncate">Pro Plan</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col h-screen relative bg-slate-50 dark:bg-background-dark">
+        <!-- Header / Model Selector -->
+        <header class="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 md:p-6">
+            <div class="relative group">
+                <button
+                    class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/80 dark:bg-[#1e1933]/80 backdrop-blur-md border border-slate-200 dark:border-[#3b3267] shadow-sm hover:border-primary/50 dark:hover:border-primary/50 transition-colors">
+                    <span class="text-sm font-semibold text-slate-700 dark:text-white">Llama 3 70B</span>
+                    <span class="material-symbols-outlined text-slate-400 text-lg">expand_more</span>
+                </button>
+                <!-- Dropdown (Hidden by default, shown on hover/focus logic would be JS, visually represented here) -->
+                <div
+                    class="absolute top-full left-0 mt-2 w-56 rounded-xl border border-slate-200 dark:border-[#3b3267] bg-white dark:bg-[#1e1933] shadow-xl p-1 hidden group-focus-within:block group-hover:block">
+                    <div class="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Select Model
+                    </div>
+                    <a class="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-100 dark:bg-[#292348] text-sm font-medium text-slate-900 dark:text-white"
+                        href="#">
+                        <span>Llama 3 70B</span>
+                        <span class="material-symbols-outlined text-primary text-lg">check</span>
+                    </a>
+                    <a class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-[#292348]/50 text-sm font-medium text-slate-600 dark:text-[#9b92c9] hover:text-slate-900 dark:hover:text-white"
+                        href="#">
+                        <span>Mistral Large</span>
+                    </a>
+                    <a class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-[#292348]/50 text-sm font-medium text-slate-600 dark:text-[#9b92c9] hover:text-slate-900 dark:hover:text-white"
+                        href="#">
+                        <span>Gemma 7B</span>
+                    </a>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <button
+                    class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-[#292348] text-slate-500 dark:text-[#9b92c9] transition-colors">
+                    <span class="material-symbols-outlined">help</span>
+                </button>
+            </div>
+        </header>
+        <!-- Centered Content -->
+        <div class="flex-1 flex flex-col items-center justify-center p-4 w-full max-w-4xl mx-auto overflow-y-auto">
+            <!-- Logo/Icon Placeholder -->
+            <div
+                class="mb-8 p-4 rounded-2xl bg-gradient-to-br from-slate-100 to-white dark:from-[#1e1933] dark:to-[#141122] shadow-sm border border-slate-100 dark:border-[#2a2444]">
+                <span class="material-symbols-outlined text-4xl text-primary dark:text-primary">smart_toy</span>
+            </div>
+            <!-- Greeting -->
+            <h1 class="text-3xl md:text-4xl font-bold text-center text-slate-900 dark:text-white mb-2">
+                How can I help you today?
+            </h1>
+            <p class="text-center text-slate-500 dark:text-[#9b92c9] mb-10 max-w-md">
+                I'm an open-source AI assistant trained to help you with coding, writing, and analysis.
+            </p>
+            <!-- Suggestion Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mb-10">
+                <!-- Card 1 -->
+                <button
+                    class="group relative flex flex-col items-start gap-2 p-4 rounded-xl border border-slate-200 dark:border-[#2a2444] bg-white dark:bg-[#1e1933] hover:border-primary/50 dark:hover:border-primary/50 hover:bg-slate-50 dark:hover:bg-[#231d3b] transition-all text-left">
+                    <div
+                        class="p-2 rounded-lg bg-purple-100 dark:bg-[#292348] text-purple-600 dark:text-purple-300 mb-1">
+                        <span class="material-symbols-outlined text-[20px]">edit_note</span>
+                    </div>
+                    <span class="font-bold text-slate-800 dark:text-white text-sm">Help me write...</span>
+                    <span class="text-slate-500 dark:text-[#9b92c9] text-xs leading-relaxed">A professional email to a
+                        client about a project delay.</span>
+                    <div
+                        class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1">
+                        <span class="material-symbols-outlined text-primary text-lg">arrow_forward</span>
+                    </div>
+                </button>
+                <!-- Card 2 -->
+                <button
+                    class="group relative flex flex-col items-start gap-2 p-4 rounded-xl border border-slate-200 dark:border-[#2a2444] bg-white dark:bg-[#1e1933] hover:border-primary/50 dark:hover:border-primary/50 hover:bg-slate-50 dark:hover:bg-[#231d3b] transition-all text-left">
+                    <div class="p-2 rounded-lg bg-blue-100 dark:bg-[#1e2a4a] text-blue-600 dark:text-blue-300 mb-1">
+                        <span class="material-symbols-outlined text-[20px]">school</span>
+                    </div>
+                    <span class="font-bold text-slate-800 dark:text-white text-sm">Explain a concept...</span>
+                    <span class="text-slate-500 dark:text-[#9b92c9] text-xs leading-relaxed">Quantum computing basics
+                        for a 10 year old student.</span>
+                    <div
+                        class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1">
+                        <span class="material-symbols-outlined text-primary text-lg">arrow_forward</span>
+                    </div>
+                </button>
+                <!-- Card 3 -->
+                <button
+                    class="group relative flex flex-col items-start gap-2 p-4 rounded-xl border border-slate-200 dark:border-[#2a2444] bg-white dark:bg-[#1e1933] hover:border-primary/50 dark:hover:border-primary/50 hover:bg-slate-50 dark:hover:bg-[#231d3b] transition-all text-left">
+                    <div class="p-2 rounded-lg bg-green-100 dark:bg-[#1a3835] text-green-600 dark:text-green-300 mb-1">
+                        <span class="material-symbols-outlined text-[20px]">code</span>
+                    </div>
+                    <span class="font-bold text-slate-800 dark:text-white text-sm">Debug code</span>
+                    <span class="text-slate-500 dark:text-[#9b92c9] text-xs leading-relaxed">Find errors in this React
+                        useEffect hook dependency array.</span>
+                    <div
+                        class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1">
+                        <span class="material-symbols-outlined text-primary text-lg">arrow_forward</span>
+                    </div>
+                </button>
+                <!-- Card 4 -->
+                <button
+                    class="group relative flex flex-col items-start gap-2 p-4 rounded-xl border border-slate-200 dark:border-[#2a2444] bg-white dark:bg-[#1e1933] hover:border-primary/50 dark:hover:border-primary/50 hover:bg-slate-50 dark:hover:bg-[#231d3b] transition-all text-left">
+                    <div
+                        class="p-2 rounded-lg bg-orange-100 dark:bg-[#3d2a1e] text-orange-600 dark:text-orange-300 mb-1">
+                        <span class="material-symbols-outlined text-[20px]">flight</span>
+                    </div>
+                    <span class="font-bold text-slate-800 dark:text-white text-sm">Plan a trip</span>
+                    <span class="text-slate-500 dark:text-[#9b92c9] text-xs leading-relaxed">Create a 3-day itinerary
+                        for a weekend trip to Tokyo.</span>
+                    <div
+                        class="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1">
+                        <span class="material-symbols-outlined text-primary text-lg">arrow_forward</span>
+                    </div>
+                </button>
+            </div>
+        </div>
+        <!-- Input Area (Fixed at bottom) -->
+        <div class="w-full max-w-4xl mx-auto px-4 pb-6 pt-2">
+            <div class="relative w-full">
+                <!-- Textarea -->
+                <div
+                    class="relative flex flex-col w-full bg-white dark:bg-[#1e1933] border border-slate-200 dark:border-[#3b3267] rounded-2xl shadow-lg dark:shadow-none focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary transition-all overflow-hidden">
+                    <textarea
+                        class="w-full bg-transparent border-0 focus:ring-0 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-[#6b6299] py-4 pl-4 pr-12 min-h-[60px] max-h-[200px] resize-none"
+                        placeholder="Message Llama 3..." rows="1"></textarea>
+                    <!-- Input Actions Bar -->
+                    <div
+                        class="flex items-center justify-between px-2 py-2 border-t border-slate-100 dark:border-[#2a2444]/50 bg-slate-50/50 dark:bg-[#1e1933]">
+                        <div class="flex items-center gap-1">
+                            <button
+                                class="p-2 rounded-lg text-slate-400 hover:text-primary dark:text-[#6b6299] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#292348] transition-colors"
+                                title="Attach file">
+                                <span class="material-symbols-outlined text-[20px]">attach_file</span>
+                            </button>
+                            <button
+                                class="p-2 rounded-lg text-slate-400 hover:text-primary dark:text-[#6b6299] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#292348] transition-colors"
+                                title="Use Microphone">
+                                <span class="material-symbols-outlined text-[20px]">mic</span>
+                            </button>
+                        </div>
+                        <button
+                            class="flex items-center justify-center h-9 w-9 rounded-lg bg-primary hover:bg-primary/90 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md shadow-primary/20">
+                            <span class="material-symbols-outlined text-[20px]">arrow_upward</span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Footer Text -->
+                <p class="text-center text-[10px] md:text-xs text-slate-400 dark:text-[#4c4285] mt-3">
+                    AI can make mistakes. Please verify important information.
+                </p>
+            </div>
+        </div>
+    </main>
+</body>
+
+</html>

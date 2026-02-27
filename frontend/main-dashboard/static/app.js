@@ -74,7 +74,8 @@ class GPUOrchestratorHub {
             '🖼️': 'blur_on',
             '⚡': 'bolt',
             '🎤': 'mic',
-            '⚙️': 'settings_input_component'
+            '⚙️': 'settings_input_component',
+            '💬': 'chat'
         };
         return iconMap[icon] || 'apps';
     }

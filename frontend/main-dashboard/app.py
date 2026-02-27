@@ -51,6 +51,15 @@ FRONTEND_SERVICES = {
         "description": "Generate random photo variations of a person",
         "app_id": "qwen-image-variations"
     },
+    "qwen35-chat": {
+        "name": "Qwen3.5 Chat",
+        "url": "/gpu-polling/qwen35-chat/",
+        "container_name": "qwen35-chat-ui",
+        "port": 7867,
+        "icon": "💬",
+        "description": "Chat with Qwen3.5-35B-A3B running locally on RTX 4090",
+        "app_id": "qwen35-chat"
+    },
 }
 
 
