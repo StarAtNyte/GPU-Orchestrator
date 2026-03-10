@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import redis.asyncio as aioredis
@@ -10,6 +11,7 @@ import asyncio
 from typing import List, Any, Union
 
 app = FastAPI(title="Qwen3.5 Chat")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://172.17.0.1:8890")
@@ -32,12 +34,35 @@ class ChatRequest(BaseModel):
     presence_penalty: float = 1.5
     enable_thinking: bool = False
     enable_web_search: bool = False
-    username: str = "local"
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    """Proxy login to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Proxy signup to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/health")
@@ -54,8 +79,9 @@ async def health():
 
 
 @app.post("/api/chat")
-async def submit_chat(chat_request: ChatRequest):
+async def submit_chat(chat_request: ChatRequest, request: Request):
     """Submit a chat job to the orchestrator. Returns job_id immediately."""
+    auth_header = request.headers.get("Authorization", "")
     # Serialize messages — content may be str or list (multimodal)
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     try:
@@ -63,7 +89,6 @@ async def submit_chat(chat_request: ChatRequest):
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
-                "username": chat_request.username,
                 "params": {
                     "messages": json.dumps(messages),
                     "temperature": str(chat_request.temperature),
@@ -75,6 +100,7 @@ async def submit_chat(chat_request: ChatRequest):
                     "enable_web_search": "true" if chat_request.enable_web_search else "false",
                 },
             },
+            headers={"Authorization": auth_header},
             timeout=30,
         )
         if response.status_code == 200:
@@ -172,16 +198,17 @@ async def stream_response(job_id: str, request: Request):
 
 
 @app.get("/api/warmup")
-async def warmup():
+async def warmup(request: Request):
     """Submit a warmup job to pre-load the model. Returns job_id to track via SSE."""
+    auth_header = request.headers.get("Authorization", "")
     try:
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
-                "username": "system",
                 "params": {"warmup": "true"},
             },
+            headers={"Authorization": auth_header},
             timeout=30,
         )
         if response.status_code == 200:

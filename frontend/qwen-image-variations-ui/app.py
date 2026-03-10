@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import requests
@@ -7,6 +8,7 @@ import os
 
 app = FastAPI(title="Qwen Image Variations")
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator:8080")
@@ -14,7 +16,6 @@ APP_ID = "qwen-image-variations"
 
 
 class VariationRequest(BaseModel):
-    username: str
     image_base64: str
     steps: int = 4
     cfg_scale: float = 1.0
@@ -24,6 +25,30 @@ class VariationRequest(BaseModel):
 async def home(request: Request):
     """Serve the Qwen Image Variations UI."""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    """Proxy login to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Proxy signup to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/health")
@@ -42,20 +67,21 @@ async def health():
 
 
 @app.post("/api/variation")
-async def generate_variation(request: VariationRequest):
+async def generate_variation(req: VariationRequest, request: Request):
     """Submit a variation generation job. Prompt is selected randomly by the worker."""
+    auth_header = request.headers.get("Authorization", "")
     try:
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
-                "username": request.username,
                 "params": {
-                    "image_base64": request.image_base64,
-                    "steps": str(request.steps),
-                    "cfg_scale": str(request.cfg_scale)
+                    "image_base64": req.image_base64,
+                    "steps": str(req.steps),
+                    "cfg_scale": str(req.cfg_scale)
                 }
             },
+            headers={"Authorization": auth_header},
             timeout=300
         )
 

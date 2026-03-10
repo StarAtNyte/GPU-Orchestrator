@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -85,7 +85,6 @@ EXAMPLE_PROMPTS = [
 
 class GenerateRequest(BaseModel):
     prompt: str
-    username: str  # Add username field
     resolution: str = "1024x1024"
     seed: int = 42
     steps: int = 9
@@ -100,6 +99,30 @@ async def home(request: Request):
         "resolutions": RESOLUTIONS,
         "example_prompts": EXAMPLE_PROMPTS
     })
+
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    """Proxy login to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Proxy signup to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 @app.get("/health")
 async def health():
@@ -116,33 +139,34 @@ async def health():
     }
 
 @app.post("/api/generate")
-async def generate(request: GenerateRequest):
+async def generate(req: GenerateRequest, request: Request):
     """Submit Z-Image generation job."""
     import random
+    auth_header = request.headers.get("Authorization", "")
 
     # Handle random seed
-    if request.random_seed:
+    if req.random_seed:
         seed = random.randint(1, 1000000)
     else:
-        seed = request.seed
+        seed = req.seed
 
     # Extract resolution (remove aspect ratio suffix if present)
-    resolution = request.resolution.split(' ')[0] if ' ' in request.resolution else request.resolution
+    resolution = req.resolution.split(' ')[0] if ' ' in req.resolution else req.resolution
 
     try:
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
-                "username": request.username,  # Include username
                 "params": {
-                    "prompt": request.prompt,
+                    "prompt": req.prompt,
                     "resolution": resolution,
                     "seed": str(seed),
-                    "steps": str(request.steps),
-                    "shift": str(request.shift)
+                    "steps": str(req.steps),
+                    "shift": str(req.shift)
                 }
             },
+            headers={"Authorization": auth_header},
             timeout=240  # 4 minutes to allow for model loading on cold start
         )
 

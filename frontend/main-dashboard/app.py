@@ -69,6 +69,30 @@ async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    """Proxy login to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Proxy signup to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
     """Serve the user history page."""
@@ -179,10 +203,11 @@ async def get_apps():
 
 
 @app.get("/api/user/jobs")
-async def get_user_jobs(username: str, app_id: Optional[str] = None, status: Optional[str] = None):
-    """Get user's job history from orchestrator."""
+async def get_user_jobs(request: Request, app_id: Optional[str] = None, status: Optional[str] = None):
+    """Get user's job history from orchestrator (JWT authenticated)."""
+    auth_header = request.headers.get("Authorization", "")
     try:
-        params = {"username": username}
+        params = {}
         if app_id:
             params["app_id"] = app_id
         if status:
@@ -191,28 +216,25 @@ async def get_user_jobs(username: str, app_id: Optional[str] = None, status: Opt
         response = requests.get(
             f"{ORCHESTRATOR_URL}/user/jobs",
             params=params,
+            headers={"Authorization": auth_header},
             timeout=10
         )
         if response.status_code == 200:
             return response.json()
         else:
-            return {"username": username, "count": 0, "jobs": []}
+            return JSONResponse(content=response.json(), status_code=response.status_code)
     except Exception as e:
-        return {
-            "username": username,
-            "count": 0,
-            "jobs": [],
-            "error": str(e)
-        }
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/api/user/jobs/{job_id}")
-async def get_user_job_details(job_id: str, username: str):
+async def get_user_job_details(job_id: str, request: Request):
     """Get detailed job information from orchestrator."""
+    auth_header = request.headers.get("Authorization", "")
     try:
         response = requests.get(
             f"{ORCHESTRATOR_URL}/user/jobs/{job_id}",
-            params={"username": username},
+            headers={"Authorization": auth_header},
             timeout=10
         )
         if response.status_code == 200:
@@ -224,12 +246,13 @@ async def get_user_job_details(job_id: str, username: str):
 
 
 @app.delete("/api/user/jobs/{job_id}")
-async def delete_user_job(job_id: str, username: str):
+async def delete_user_job(job_id: str, request: Request):
     """Delete a job from user's history."""
+    auth_header = request.headers.get("Authorization", "")
     try:
         response = requests.delete(
             f"{ORCHESTRATOR_URL}/user/jobs/{job_id}",
-            params={"username": username},
+            headers={"Authorization": auth_header},
             timeout=10
         )
         if response.status_code == 200:

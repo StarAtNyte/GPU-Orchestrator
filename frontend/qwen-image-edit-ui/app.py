@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -18,7 +18,6 @@ APP_ID = "qwen-image-edit"
 
 class EditRequest(BaseModel):
     prompt: str
-    username: str
     image_base64: str
     negative_prompt: str = ""
     steps: int = 4
@@ -29,6 +28,30 @@ class EditRequest(BaseModel):
 async def home(request: Request):
     """Serve the Qwen Image Edit UI."""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    """Proxy login to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Proxy signup to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/health")
@@ -47,22 +70,23 @@ async def health():
 
 
 @app.post("/api/edit")
-async def edit_image(request: EditRequest):
+async def edit_image(req: EditRequest, request: Request):
     """Submit Qwen Image Edit job."""
+    auth_header = request.headers.get("Authorization", "")
     try:
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
-                "username": request.username,
                 "params": {
-                    "prompt": request.prompt,
-                    "image_base64": request.image_base64,
-                    "negative_prompt": request.negative_prompt,
-                    "steps": str(request.steps),
-                    "cfg_scale": str(request.cfg_scale)
+                    "prompt": req.prompt,
+                    "image_base64": req.image_base64,
+                    "negative_prompt": req.negative_prompt,
+                    "steps": str(req.steps),
+                    "cfg_scale": str(req.cfg_scale)
                 }
             },
+            headers={"Authorization": auth_header},
             timeout=300
         )
 

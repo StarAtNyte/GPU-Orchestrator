@@ -81,6 +81,7 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
       NVIDIA_VISIBLE_DEVICES: all
       ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
     ports:
       - "8890:8080"
     volumes:

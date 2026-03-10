@@ -137,7 +137,7 @@ class Qwen35ChatHandler:
                 "--n-gpu-layers",str(N_GPU_LAYERS),
                 "--threads",     str(N_THREADS),
                 "--parallel",    "1",          # single slot — reduces KV/rs cache, prevents OOM
-                "--flash-attn",  "on",        # halves KV cache VRAM, enables larger context
+                "--flash-attn", "on",        # halves KV cache VRAM, enables larger context
                 "--cache-type-k", "q8_0",     # quantize KV cache for more headroom
                 "--cache-type-v", "q8_0",
                 "--port",        str(SERVER_PORT),

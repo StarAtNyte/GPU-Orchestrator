@@ -353,16 +353,7 @@
         let imageBase64 = null;
 
         function getUsername() {
-            let username = localStorage.getItem('gpu_orchestrator_username');
-            if (!username) {
-                username = prompt('Please enter your username:');
-                if (!username || username.trim() === '') {
-                    return null;
-                }
-                username = username.trim();
-                localStorage.setItem('gpu_orchestrator_username', username);
-            }
-            return username;
+            return typeof Auth !== 'undefined' ? Auth.getUsername() : null;
         }
 
         uploadArea.addEventListener('click', () => imageInput.click());
@@ -414,12 +405,7 @@
                 return;
             }
 
-            const username = getUsername();
-            if (!username) {
-                errorMsg.textContent = 'Username is required to submit jobs';
-                errorMsg.style.display = 'block';
-                return;
-            }
+            if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { Auth.showModal(); return; }
 
             generateBtn.disabled = true;
             placeholderState.style.display = 'none';
@@ -427,11 +413,11 @@
             resultState.style.display = 'none';
             loadingText.textContent = 'Submitting...';
 
+            const authHeaders = typeof Auth !== 'undefined' ? Auth.getAuthHeaders() : { 'Content-Type': 'application/json' };
             fetch('api/variation', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders,
                 body: JSON.stringify({
-                    username: username,
                     image_base64: imageBase64,
                     steps: 4,
                     cfg_scale: 1.0
@@ -519,6 +505,8 @@
         checkHealth();
         setInterval(checkHealth, 10000);
     </script>
+    <script>window.AUTH_REDIRECT_URL = '/gpu-polling/';</script>
+    <script src="static/js/auth.js"></script>
 </body>
 
 </html>

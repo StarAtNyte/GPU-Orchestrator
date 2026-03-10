@@ -182,14 +182,22 @@ func main() {
 		log.Println("[INFO] Admin API key authentication enabled")
 	}
 
-	http.HandleFunc("/submit", submitJobHandler)
+	// Initialize JWT secret
+	initJWTSecret()
+
+	// Auth endpoints (public)
+	http.HandleFunc("/auth/signup", signupHandler)
+	http.HandleFunc("/auth/login", loginHandler)
+	http.HandleFunc("/auth/me", jwtAuthMiddleware(meHandler))
+
+	http.HandleFunc("/submit", jwtAuthMiddleware(submitJobHandler))
 	http.HandleFunc("/status/", statusHandler)
 	http.HandleFunc("/workers", workersHandler)
 	http.HandleFunc("/health/gpu", gpuHealthHandler)
 
-	// User history endpoints
-	http.HandleFunc("/user/jobs", userJobsHandler)
-	http.HandleFunc("/user/jobs/", userJobDetailsHandler)
+	// User history endpoints (protected)
+	http.HandleFunc("/user/jobs", jwtAuthMiddleware(userJobsHandler))
+	http.HandleFunc("/user/jobs/", jwtAuthMiddleware(userJobDetailsHandler))
 
 	// Admin API endpoints (protected by adminAuthMiddleware)
 	http.HandleFunc("/admin/jobs", adminAuthMiddleware(adminJobsHandler))
@@ -245,14 +253,15 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate username
-	if req.Username == "" {
-		http.Error(w, "Username is required", http.StatusBadRequest)
+	// Get authenticated username from JWT context
+	username := getUsernameFromContext(r)
+	if username == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	// Rate limit: 20 submissions per minute per username
-	if !checkRateLimit(req.Username) {
+	if !checkRateLimit(username) {
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -271,7 +280,7 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := db.Exec(`
 		INSERT INTO jobs (id, app_id, status, params, username, created_at)
 		VALUES ($1, $2, $3, $4, $5, NOW())
-	`, jobID, req.AppID, "PENDING", paramsJSON, req.Username)
+	`, jobID, req.AppID, "PENDING", paramsJSON, username)
 	if err != nil {
 		log.Printf("[ERROR] Failed to insert job into database: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -336,7 +345,7 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 
-		log.Printf("[INFO] [Local] Job %s queued on %s for %s", jobID, appConfig.Queue, req.AppID)
+		log.Printf("[INFO] [Local] Job %s queued on %s for %s (user: %s)", jobID, appConfig.Queue, req.AppID, username)
 
 	} else if appConfig.Type == "modal" {
 		// == PATH B: Modal Cloud Endpoint ==
@@ -556,10 +565,10 @@ func userJobsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get username from query parameter
-	username := r.URL.Query().Get("username")
+	// Get username from JWT context
+	username := getUsernameFromContext(r)
 	if username == "" {
-		http.Error(w, "Username parameter is required", http.StatusBadRequest)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -679,10 +688,10 @@ func userJobDetailsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get username from query parameter (for authorization)
-	username := r.URL.Query().Get("username")
+	// Get username from JWT context
+	username := getUsernameFromContext(r)
 	if username == "" {
-		http.Error(w, "Username parameter is required", http.StatusBadRequest)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

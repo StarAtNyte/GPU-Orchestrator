@@ -8,7 +8,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import requests
-import time
 import os
 from typing import Optional
 
@@ -31,13 +30,36 @@ class GenerateRequest(BaseModel):
     num_inference_steps: int = 50
     guidance_scale: float = 7.5
     seed: Optional[int] = None
-    username: str = "anonymous"
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the main UI."""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    """Proxy login to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Proxy signup to orchestrator."""
+    body = await request.body()
+    try:
+        response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
+                                 headers={"Content-Type": "application/json"}, timeout=10)
+        return JSONResponse(content=response.json(), status_code=response.status_code)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/health")
@@ -80,36 +102,37 @@ async def gpu_health():
 
 
 @app.post("/api/generate")
-async def generate(request: GenerateRequest):
+async def generate(req: GenerateRequest, request: Request):
     """Submit image generation job to orchestrator."""
+    auth_header = request.headers.get("Authorization", "")
     try:
         # Step 1: Check GPU health first
         health_response = requests.get(
             f"{ORCHESTRATOR_URL}/health/gpu",
             timeout=5
         )
-        
+
         if health_response.status_code != 200:
             raise HTTPException(status_code=503, detail="Cannot reach orchestrator for GPU health check")
-        
+
         health_data = health_response.json()
-        
+
         # Step 2: Submit to orchestrator (always submit - orchestrator handles queueing)
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
                 "app_id": APP_ID,
-                "username": request.username,
                 "params": {
-                    "prompt": request.prompt,
-                    "negative_prompt": request.negative_prompt or "",
-                    "width": str(request.width),
-                    "height": str(request.height),
-                    "num_inference_steps": str(request.num_inference_steps),
-                    "guidance_scale": str(request.guidance_scale),
-                    "seed": str(request.seed) if request.seed else "-1"
+                    "prompt": req.prompt,
+                    "negative_prompt": req.negative_prompt or "",
+                    "width": str(req.width),
+                    "height": str(req.height),
+                    "num_inference_steps": str(req.num_inference_steps),
+                    "guidance_scale": str(req.guidance_scale),
+                    "seed": str(req.seed) if req.seed else "-1"
                 }
             },
+            headers={"Authorization": auth_header},
             timeout=240  # 4 minutes to allow for model loading on cold start
         )
 

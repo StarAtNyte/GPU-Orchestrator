@@ -41,35 +41,14 @@
             </div>
             <div class="flex items-center gap-6">
                 <a href="./" class="text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">Home</a>
-                <div id="usernameBadge"
-                    class="flex items-center gap-2 bg-[#f0f0f0] px-3 py-1.5 rounded-full border border-[#e0e0e0] cursor-pointer"
-                    onclick="changeUsername()">
+                <div class="flex items-center gap-3">
                     <span class="material-symbols-outlined text-[#666] text-sm">person</span>
-                    <span id="currentUsername" class="text-[#666] text-xs font-semibold uppercase tracking-wider">Guest</span>
+                    <span id="currentUsername" class="text-[#666] text-xs font-semibold uppercase tracking-wider">…</span>
+                    <button id="signOutBtn" class="text-xs text-[#6b7280] hover:text-[#111] underline">Sign out</button>
                 </div>
             </div>
         </div>
     </header>
-
-    <!-- Username Modal -->
-    <div id="usernameModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-        <div class="bg-white border border-[#e0e0e0] rounded-xl p-8 max-w-md w-full shadow-lg">
-            <h3 class="text-xl font-semibold mb-3">Enter Your Username</h3>
-            <p class="text-[#888] text-sm mb-6">Choose a username to track your submissions</p>
-            <input
-                type="text"
-                id="usernameInput"
-                placeholder="Enter username"
-                class="w-full px-4 py-3 bg-[#fafafa] border border-[#e0e0e0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1a1a1a] mb-4"
-            />
-            <button
-                onclick="saveUsername()"
-                class="w-full bg-[#1a1a1a] hover:bg-[#333] text-white font-medium py-3 px-6 rounded-lg transition-colors"
-            >
-                Save Username
-            </button>
-        </div>
-    </div>
 
     <main class="flex-grow px-6 py-12">
         <!-- PageHeading -->
@@ -135,31 +114,31 @@
     </footer>
 
     <script>
+        const TOKEN_KEY = 'gpu_auth_token';
+        function getToken() { return localStorage.getItem(TOKEN_KEY); }
+        function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+        function decodePayload(token) {
+            try { const p = token.split('.'); return p.length===3 ? JSON.parse(atob(p[1].replace(/-/g,'+').replace(/_/g,'/'))) : null; }
+            catch { return null; }
+        }
         function getUsername() {
-            return localStorage.getItem('gpu_orchestrator_username') || null;
+            const t = getToken(); if (!t) return null;
+            const p = decodePayload(t); return p ? p.username : null;
+        }
+        function isLoggedIn() {
+            const t = getToken(); if (!t) return false;
+            const p = decodePayload(t); if (!p) return false;
+            if (p.exp && Date.now()/1000 > p.exp) { clearToken(); return false; }
+            return true;
+        }
+        function getAuthHeaders() {
+            return { 'Authorization': 'Bearer ' + (getToken() || '') };
         }
 
-        function setUsername(username) {
-            localStorage.setItem('gpu_orchestrator_username', username);
-            document.getElementById('currentUsername').textContent = username;
-        }
+        document.getElementById('signOutBtn').addEventListener('click', () => { clearToken(); window.location.href = './'; });
 
-        function changeUsername() {
-            document.getElementById('usernameModal').classList.remove('hidden');
-            document.getElementById('usernameInput').value = getUsername() || '';
-            document.getElementById('usernameInput').focus();
-        }
-
-        function saveUsername() {
-            const username = document.getElementById('usernameInput').value.trim();
-            if (username) {
-                setUsername(username);
-                document.getElementById('usernameModal').classList.add('hidden');
-                loadJobs();
-            } else {
-                alert('Please enter a username');
-            }
-        }
+        // Redirect to login if not authenticated
+        if (!isLoggedIn()) { window.location.href = './?return=' + encodeURIComponent(window.location.href); }
 
         function getStatusBadge(status) {
             const map = {
@@ -230,12 +209,10 @@
             event.stopPropagation();
             if (!confirm('Remove this job from your history?')) return;
 
-            const username = getUsername();
-            if (!username) return;
-
             try {
-                const response = await fetch(`api/user/jobs/${jobId}?username=${encodeURIComponent(username)}`, {
-                    method: 'DELETE'
+                const response = await fetch(`api/user/jobs/${jobId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
                 });
                 if (response.ok) {
                     loadJobs();
@@ -309,10 +286,7 @@
         }
 
         function viewJobDetails(jobId) {
-            const username = getUsername();
-            if (!username) return;
-
-            fetch(`api/user/jobs/${jobId}?username=${encodeURIComponent(username)}`)
+            fetch(`api/user/jobs/${jobId}`, { headers: getAuthHeaders() })
                 .then(res => res.json())
                 .then(job => {
                     const output = job.result || job.output;
@@ -360,21 +334,17 @@
         }
 
         async function loadJobs() {
-            const username = getUsername();
-            if (!username) {
-                document.getElementById('jobsGrid').innerHTML = '<div class="text-center text-[#aaa] py-12 col-span-full">Please set your username to view history</div>';
-                return;
-            }
-
             const appId = document.getElementById('filterService').value;
             const status = document.getElementById('filterStatus').value;
 
             try {
-                let url = `api/user/jobs?username=${encodeURIComponent(username)}`;
-                if (appId) url += `&app_id=${appId}`;
-                if (status) url += `&status=${status}`;
+                let url = `api/user/jobs`;
+                const params = [];
+                if (appId) params.push(`app_id=${appId}`);
+                if (status) params.push(`status=${status}`);
+                if (params.length) url += '?' + params.join('&');
 
-                const response = await fetch(url);
+                const response = await fetch(url, { headers: getAuthHeaders() });
                 const data = await response.json();
 
                 document.getElementById('jobCount').textContent = data.count;
@@ -400,17 +370,9 @@
             const username = getUsername();
             if (username) {
                 document.getElementById('currentUsername').textContent = username;
-                loadJobs();
-            } else {
-                changeUsername();
             }
+            loadJobs();
         };
-
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('usernameInput')?.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') saveUsername();
-            });
-        });
     </script>
 </body>
 

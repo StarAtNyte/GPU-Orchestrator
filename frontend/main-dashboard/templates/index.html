@@ -44,21 +44,78 @@
                 <h1 class="text-xl font-semibold tracking-tight">GPU Polling</h1>
             </div>
             <div class="flex items-center gap-6">
-                <a href="history" class="text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">History</a>
+                <a id="historyLink" href="history" class="hidden text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">History</a>
                 <div id="systemStatusBadge" class="flex items-center gap-2">
                     <span id="statusDot" class="w-2 h-2 rounded-full bg-yellow-400"></span>
                     <span id="systemStatusText" class="text-[#666] text-sm">Connecting…</span>
+                </div>
+                <!-- User badge (shown when logged in) -->
+                <div id="userBadge" class="hidden flex items-center gap-3">
+                    <span id="userBadgeText" class="text-sm font-medium text-[#374151]"></span>
+                    <button id="signOutBtn" class="text-xs text-[#6b7280] hover:text-[#111] underline">Sign out</button>
                 </div>
             </div>
         </div>
     </header>
 
-    <main class="flex-grow px-6 py-12">
+    <!-- Login / Signup (shown when not logged in) -->
+    <div id="authSection" class="hidden flex-grow flex items-center justify-center px-6 py-16">
+        <div class="w-full max-w-md">
+            <div class="text-center mb-8">
+                <h2 class="text-3xl font-bold tracking-tight mb-2">GPU Workspace</h2>
+                <p class="text-[#666]">Sign in to access AI services</p>
+            </div>
+            <!-- Tabs -->
+            <div class="flex border-b border-[#e0e0e0] mb-6">
+                <button id="tabLogin" onclick="switchTab('login')" class="flex-1 py-3 text-sm font-medium text-[#4f46e5] border-b-2 border-[#4f46e5]">Sign In</button>
+                <button id="tabSignup" onclick="switchTab('signup')" class="flex-1 py-3 text-sm font-medium text-[#999] border-b-2 border-transparent hover:text-[#555]">Create Account</button>
+            </div>
+            <!-- Login form -->
+            <div id="loginForm">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-[#374151] mb-1">Email</label>
+                    <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email"
+                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-[#374151] mb-1">Password</label>
+                    <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password"
+                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
+                </div>
+                <button id="loginBtn" onclick="handleLogin()"
+                    class="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">Sign In</button>
+                <div id="loginError" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
+            </div>
+            <!-- Signup form -->
+            <div id="signupForm" class="hidden">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-[#374151] mb-1">Username</label>
+                    <input id="signupUsername" type="text" placeholder="cooluser123" autocomplete="username"
+                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-[#374151] mb-1">Email</label>
+                    <input id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email"
+                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-[#374151] mb-1">Password</label>
+                    <input id="signupPassword" type="password" placeholder="Min. 8 characters" autocomplete="new-password"
+                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
+                </div>
+                <button id="signupBtn" onclick="handleSignup()"
+                    class="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">Create Account</button>
+                <div id="signupError" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main content (shown when logged in) -->
+    <main id="mainContent" class="hidden flex-grow px-6 py-12">
         <!-- PageHeading -->
         <div class="text-center mb-12 max-w-2xl mx-auto">
             <h2 class="text-4xl md:text-5xl font-bold mb-4 tracking-tight">AI Services</h2>
-            <p class="text-[#666] text-lg">Manage your GPU generation and processing tasks from a centralized interface.
-            </p>
+            <p class="text-[#666] text-lg">Manage your GPU generation and processing tasks from a centralized interface.</p>
         </div>
 
         <!-- Services Grid -->
@@ -79,6 +136,121 @@
         </div>
     </footer>
 
+    <script>
+    const TOKEN_KEY = 'gpu_auth_token';
+
+    function getToken() { return localStorage.getItem(TOKEN_KEY); }
+    function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+    function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+
+    function decodePayload(token) {
+        try {
+            const parts = token.split('.');
+            if (parts.length !== 3) return null;
+            return JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        } catch { return null; }
+    }
+
+    function getUsername() {
+        const t = getToken(); if (!t) return null;
+        const p = decodePayload(t); return p ? p.username : null;
+    }
+
+    function isLoggedIn() {
+        const t = getToken(); if (!t) return false;
+        const p = decodePayload(t); if (!p) return false;
+        if (p.exp && Date.now() / 1000 > p.exp) { clearToken(); return false; }
+        return true;
+    }
+
+    function getAuthHeaders() {
+        return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (getToken() || '') };
+    }
+
+    function switchTab(tab) {
+        const isLogin = tab === 'login';
+        document.getElementById('loginForm').classList.toggle('hidden', !isLogin);
+        document.getElementById('signupForm').classList.toggle('hidden', isLogin);
+        document.getElementById('tabLogin').className = 'flex-1 py-3 text-sm font-medium border-b-2 ' +
+            (isLogin ? 'text-[#4f46e5] border-[#4f46e5]' : 'text-[#999] border-transparent hover:text-[#555]');
+        document.getElementById('tabSignup').className = 'flex-1 py-3 text-sm font-medium border-b-2 ' +
+            (!isLogin ? 'text-[#4f46e5] border-[#4f46e5]' : 'text-[#999] border-transparent hover:text-[#555]');
+    }
+
+    function showAuthError(id, msg) {
+        const el = document.getElementById(id);
+        el.textContent = msg; el.classList.remove('hidden');
+    }
+
+    async function handleLogin() {
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
+        const btn = document.getElementById('loginBtn');
+        document.getElementById('loginError').classList.add('hidden');
+        if (!email || !password) { showAuthError('loginError', 'Please fill in all fields.'); return; }
+        btn.disabled = true; btn.textContent = 'Signing in…';
+        try {
+            const res = await fetch('auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
+            const data = await res.json();
+            if (res.ok) { onLoginSuccess(data); }
+            else { showAuthError('loginError', data.error || 'Sign in failed.'); }
+        } catch { showAuthError('loginError', 'Network error. Please try again.'); }
+        finally { btn.disabled = false; btn.textContent = 'Sign In'; }
+    }
+
+    async function handleSignup() {
+        const username = document.getElementById('signupUsername').value.trim();
+        const email = document.getElementById('signupEmail').value.trim();
+        const password = document.getElementById('signupPassword').value;
+        const btn = document.getElementById('signupBtn');
+        document.getElementById('signupError').classList.add('hidden');
+        if (!username || !email || !password) { showAuthError('signupError', 'Please fill in all fields.'); return; }
+        btn.disabled = true; btn.textContent = 'Creating account…';
+        try {
+            const res = await fetch('auth/signup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username, email, password}) });
+            const data = await res.json();
+            if (res.ok) { onLoginSuccess(data); }
+            else { showAuthError('signupError', data.error || 'Sign up failed.'); }
+        } catch { showAuthError('signupError', 'Network error. Please try again.'); }
+        finally { btn.disabled = false; btn.textContent = 'Create Account'; }
+    }
+
+    function onLoginSuccess(data) {
+        setToken(data.token);
+        // Redirect to return URL if present (came from another app)
+        const returnUrl = new URLSearchParams(window.location.search).get('return');
+        if (returnUrl) { window.location.href = returnUrl; return; }
+        showLoggedInUI(data.username);
+    }
+
+    function showLoggedInUI(username) {
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('mainContent').classList.remove('hidden');
+        document.getElementById('historyLink').classList.remove('hidden');
+        document.getElementById('userBadge').classList.remove('hidden');
+        document.getElementById('userBadgeText').textContent = '@' + username;
+        loadServices();
+    }
+
+    document.getElementById('signOutBtn').addEventListener('click', () => {
+        clearToken(); location.reload();
+    });
+
+    // Enter key support
+    ['loginEmail','loginPassword'].forEach(id =>
+        document.getElementById(id).addEventListener('keydown', e => { if (e.key==='Enter') handleLogin(); })
+    );
+    ['signupUsername','signupEmail','signupPassword'].forEach(id =>
+        document.getElementById(id).addEventListener('keydown', e => { if (e.key==='Enter') handleSignup(); })
+    );
+
+    // Init
+    if (isLoggedIn()) {
+        showLoggedInUI(getUsername());
+    } else {
+        document.getElementById('authSection').classList.remove('hidden');
+    }
+    </script>
     <script src="static/app.js"></script>
 </body>
 

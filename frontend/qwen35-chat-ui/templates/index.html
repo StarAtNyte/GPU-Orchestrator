@@ -1057,6 +1057,8 @@
 
 </div><!-- /main-wrapper -->
 
+<script>window.AUTH_REDIRECT_URL = '/gpu-polling/';</script>
+<script src="static/js/auth.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════
 // PDF.js worker
@@ -1113,7 +1115,7 @@ async function initModelWarmup() {
   disableInput();
   setModelStatus('loading', 'Loading model…');
   try {
-    const res  = await fetch('api/warmup');
+    const res  = await fetch('api/warmup', { headers: Auth.getAuthHeaders() });
     const data = await res.json();
     if (!data.success) {
       setModelStatus('error', 'Failed to start model');
@@ -1497,9 +1499,11 @@ async function sendMessage(prefillText) {
   const settings = getSettings();
 
   try {
+    if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { Auth.showModal(); return; }
+    const chatHeaders = typeof Auth !== 'undefined' ? Auth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: chatHeaders,
       body: JSON.stringify({ messages, ...settings }),
     });
     const data = await res.json();

@@ -250,17 +250,7 @@ class SDXLImageUI {
         const width = parseInt(resolution[0]);
         const height = parseInt(resolution[1]);
 
-        // Check for username
-        let username = localStorage.getItem('gpu_orchestrator_username');
-        if (!username) {
-            username = prompt('Please enter your username:');
-            if (!username || username.trim() === '') {
-                alert('Username is required to submit jobs');
-                return;
-            }
-            username = username.trim();
-            localStorage.setItem('gpu_orchestrator_username', username);
-        }
+        if (!Auth.isLoggedIn()) { Auth.showModal(); return; }
 
         const data = {
             prompt: formData.get('prompt'),
@@ -270,7 +260,6 @@ class SDXLImageUI {
             num_inference_steps: 50,
             guidance_scale: 7.5,
             seed: null,
-            username: username
         };
 
         // Show loading state
@@ -283,7 +272,7 @@ class SDXLImageUI {
         try {
             const response = await fetch('api/generate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: Auth.getAuthHeaders(),
                 body: JSON.stringify(data)
             });
 

@@ -188,22 +188,11 @@ class ZImageUI {
     async handleSubmit(e) {
         e.preventDefault();
 
-        // Check for username
-        let username = localStorage.getItem('gpu_orchestrator_username');
-        if (!username) {
-            username = prompt('Please enter your username:');
-            if (!username || username.trim() === '') {
-                alert('Username is required to submit jobs');
-                return;
-            }
-            username = username.trim();
-            localStorage.setItem('gpu_orchestrator_username', username);
-        }
+        if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { Auth.showModal(); return; }
 
         const formData = new FormData(this.form);
         const data = {
             prompt: formData.get('prompt'),
-            username: username,  // Include username
             resolution: formData.get('resolution'),
             steps: 9,
             shift: 3.0,
@@ -221,7 +210,7 @@ class ZImageUI {
         try {
             const response = await fetch('api/generate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: typeof Auth !== 'undefined' ? Auth.getAuthHeaders() : { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
 

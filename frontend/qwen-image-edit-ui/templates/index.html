@@ -346,18 +346,9 @@
 
         let imageBase64 = null;
 
-        // Username management (shared with main dashboard)
+        // Auth check — uses Auth module (auth.js loaded at bottom of body)
         function getUsername() {
-            let username = localStorage.getItem('gpu_orchestrator_username');
-            if (!username) {
-                username = prompt('Please enter your username:');
-                if (!username || username.trim() === '') {
-                    return null;
-                }
-                username = username.trim();
-                localStorage.setItem('gpu_orchestrator_username', username);
-            }
-            return username;
+            return typeof Auth !== 'undefined' ? Auth.getUsername() : null;
         }
 
         uploadArea.addEventListener('click', () => imageInput.click());
@@ -410,12 +401,7 @@
                 return;
             }
 
-            const username = getUsername();
-            if (!username) {
-                errorMsg.textContent = 'Username is required to submit jobs';
-                errorMsg.style.display = 'block';
-                return;
-            }
+            if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { Auth.showModal(); return; }
 
             const prompt = document.getElementById('prompt').value;
             const negativePrompt = document.getElementById('negativePrompt').value;
@@ -428,12 +414,12 @@
             loadingText.textContent = 'Submitting...';
 
             try {
+                const headers = typeof Auth !== 'undefined' ? Auth.getAuthHeaders() : { 'Content-Type': 'application/json' };
                 const response = await fetch('api/edit', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({
                         prompt,
-                        username: username,
                         image_base64: imageBase64,
                         negative_prompt: negativePrompt,
                         steps,
@@ -516,6 +502,8 @@
         checkHealth();
         setInterval(checkHealth, 10000);
     </script>
+    <script>window.AUTH_REDIRECT_URL = '/gpu-polling/';</script>
+    <script src="static/js/auth.js"></script>
 </body>
 
 </html>
