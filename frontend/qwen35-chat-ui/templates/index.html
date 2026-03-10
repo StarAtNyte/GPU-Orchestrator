@@ -1006,7 +1006,7 @@
           <div class="toggle-sub">DuckDuckGo — searches when needed</div>
         </div>
         <label class="toggle">
-          <input type="checkbox" id="enableWebSearch" />
+          <input type="checkbox" id="enableWebSearch" autocomplete="off" />
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -2096,6 +2096,7 @@ function toggleTheme() {
 (function() {
   const saved = localStorage.getItem('qwen35_theme') || 'dark';
   applyTheme(saved);
+  document.getElementById('enableWebSearch').checked = false;
 })();
 </script>
 </body>
