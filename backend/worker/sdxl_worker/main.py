@@ -1,33 +1,43 @@
 """
 SDXL Worker
 Isolated worker for SDXL image generation jobs
+
+Three-state model lifecycle
+────────────────────────────
+  IDLE       – container running, model NOT loaded in GPU VRAM (GPU is free)
+  WARM       – model loaded in GPU VRAM, idle timer ticking, not processing
+  PROCESSING – actively running inference (GPU VRAM + compute occupied)
+
+State is published to etcd on every heartbeat tick AND immediately whenever
+the model lifecycle changes, so the orchestrator always has an up-to-date view.
+The orchestrator can call POST /cleanup to force an immediate WARM → IDLE
+transition (model offload) without stopping the container.
 """
 
+import json
+import logging
 import os
 import signal
 import sys
-import time
-import logging
-import redis
-import psycopg2
-from etcd3 import client as etcd_client
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
-import json
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Setup paths
-sys.path.append('/app')
+import psycopg2
+import redis
+from etcd3 import client as etcd_client
+
+
+sys.path.append("/app")
 from shared import worker_pb2
 from shared.gpu_metrics_collector import GPUMetricsCollector
 
-# Setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
+# ── environment ───────────────────────────────────────────────────────────────
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
@@ -40,61 +50,193 @@ ETCD_PORT = int(os.getenv("ETCD_PORT", "2379"))
 STREAM_KEY = "jobs:sdxl"
 GROUP_NAME = "sdxl-workers"
 WORKER_ID = os.getenv("WORKER_ID", "sdxl-worker-1")
+APP_ID = "sdxl-image-gen"
+QUEUE = STREAM_KEY
 
 shutdown_flag = threading.Event()
 
 
 def handle_shutdown(sig, frame):
-    logger.info(f"Received signal {sig}, shutting down...")
+    logger.info(f"Received signal {sig}, shutting down…")
     shutdown_flag.set()
 
 
 signal.signal(signal.SIGTERM, handle_shutdown)
 signal.signal(signal.SIGINT, handle_shutdown)
 
-# Import handler
-from handler import SDXLHandler
+# ── global etcd state ─────────────────────────────────────────────────────────
+# Set once by register_etcd(); reused by publish_state() and the heartbeat loop.
+_etcd_client = None
+_etcd_key = None
+_etcd_lease = None
+_current_state = "IDLE"  # IDLE | WARM | PROCESSING
+_etcd_state_lock = threading.Lock()
 
-# Global handler instance
-handler = SDXLHandler()
+# Global handler instance (set in main())
+handler = None
 
-# HTTP Request Handler for cleanup endpoint
-class CleanupHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        if self.path == '/cleanup':
+
+# ── state publishing ──────────────────────────────────────────────────────────
+
+
+def _build_etcd_value(state: str) -> str:
+    return f"app={APP_ID},queue={QUEUE},status={state}"
+
+
+def publish_state(state: str) -> None:
+    """
+    Update the in-memory state and push it to etcd immediately.
+
+    Called by the handler on every model-lifecycle event (load, unload,
+    job start, job finish) and by the heartbeat loop every few seconds so
+    the orchestrator always has a live, accurate view of this worker.
+    """
+    global _current_state
+    with _etcd_state_lock:
+        _current_state = state
+        try:
+            if _etcd_client and _etcd_key and _etcd_lease:
+                _etcd_client.put(_etcd_key, _build_etcd_value(state), lease=_etcd_lease)
+                logger.info(f"[STATE] → {state}")
+        except Exception as exc:
+            logger.warning(f"[STATE] Failed to publish state={state}: {exc}")
+
+
+# ── etcd registration + heartbeat ─────────────────────────────────────────────
+
+
+def register_etcd():
+    """Register in etcd and store the client/lease for later state updates."""
+    global _etcd_client, _etcd_key, _etcd_lease
+    try:
+        _etcd_client = etcd_client(host=ETCD_HOST, port=ETCD_PORT)
+        _etcd_key = f"/workers/{WORKER_ID}"
+        _etcd_lease = _etcd_client.lease(10)  # 10-second TTL
+        _etcd_client.put(_etcd_key, _build_etcd_value("IDLE"), lease=_etcd_lease)
+        logger.info(f"[ETCD] Registered {WORKER_ID} (state=IDLE)")
+        return _etcd_lease
+    except Exception as exc:
+        logger.error(f"[ETCD] Registration failed: {exc}")
+        return None
+
+
+def start_heartbeat(lease) -> None:
+    """
+    Background thread: re-publish the current model state every 3 seconds.
+
+    Re-publishing with the existing lease both refreshes the TTL *and* keeps
+    the orchestrator's view accurate (the heartbeat value includes the state).
+    """
+    consecutive_failures = 0
+    max_failures = 3
+
+    def _loop():
+        nonlocal consecutive_failures
+        while True:
             try:
-                handler.offload_model()
+                if _etcd_client and _etcd_key and lease:
+                    lease.refresh()
+                    with _etcd_state_lock:
+                        state = _current_state
+                    _etcd_client.put(_etcd_key, _build_etcd_value(state), lease=lease)
+                    consecutive_failures = 0
+            except Exception as exc:
+                consecutive_failures += 1
+                logger.error(
+                    f"[ETCD] Heartbeat error ({consecutive_failures}/{max_failures}): {exc}"
+                )
+                if consecutive_failures >= max_failures:
+                    logger.critical(
+                        "[ETCD] Repeated heartbeat failures — worker may appear OFFLINE to orchestrator"
+                    )
+            time.sleep(3)
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    logger.info("[ETCD] Heartbeat thread started")
+
+
+# ── HTTP server (cleanup + status) ────────────────────────────────────────────
+
+
+class WorkerHTTPHandler(BaseHTTPRequestHandler):
+    """
+    POST /cleanup  – offload the model from GPU VRAM immediately (WARM → IDLE).
+                     The orchestrator calls this to free VRAM for another app
+                     without killing this container.
+    GET  /status   – return the current model state as JSON.
+    """
+
+    def do_POST(self):
+        if self.path == "/cleanup":
+            try:
+                logger.info("[HTTP] /cleanup called — offloading model")
+                handler.offload_model()  # triggers publish_state("IDLE") via callback
+                publish_state("IDLE")  # safety-net in case callback wasn't wired
                 self.send_response(200)
-                self.send_header('Content-type', 'application/json')
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "message": "GPU memory cleaned"}).encode())
-            except Exception as e:
-                logger.error(f"Cleanup error: {e}")
+                self.wfile.write(
+                    json.dumps(
+                        {"status": "success", "message": "Model offloaded"}
+                    ).encode()
+                )
+            except Exception as exc:
+                logger.error(f"[HTTP] /cleanup error: {exc}")
                 self.send_response(500)
-                self.send_header('Content-type', 'application/json')
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
+                self.wfile.write(
+                    json.dumps({"status": "error", "message": str(exc)}).encode()
+                )
         else:
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
-        # Suppress default HTTP logging
+    def do_GET(self):
+        if self.path == "/status":
+            with _etcd_state_lock:
+                state = _current_state
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "worker_id": WORKER_ID,
+                        "model_state": state,
+                        "app_id": APP_ID,
+                    }
+                ).encode()
+            )
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):  # suppress default access log
         pass
 
 
+def start_http_server() -> None:
+    port = int(os.getenv("CLEANUP_PORT", "8000"))
+    server = HTTPServer(("0.0.0.0", port), WorkerHTTPHandler)
+    logger.info(f"[HTTP] Worker HTTP server listening on port {port}")
+    server.serve_forever()
+
+
+# ── PostgreSQL helpers ────────────────────────────────────────────────────────
+
+
 def get_postgres_connection():
-    """Create PostgreSQL connection."""
     return psycopg2.connect(
         host=POSTGRES_HOST,
         user=POSTGRES_USER,
         password=POSTGRES_PASSWORD,
-        dbname=POSTGRES_DB
+        dbname=POSTGRES_DB,
     )
 
 
 def update_job_status(job_id, status, error=None, output=None):
-    """Update job status in PostgreSQL."""
     try:
         conn = get_postgres_connection()
         cursor = conn.cursor()
@@ -102,252 +244,190 @@ def update_job_status(job_id, status, error=None, output=None):
         if status == "PROCESSING":
             cursor.execute(
                 "UPDATE jobs SET status = %s, started_at = NOW() WHERE id = %s",
-                (status, job_id)
+                (status, job_id),
             )
         elif status == "COMPLETED":
-            import json
             cursor.execute(
                 "UPDATE jobs SET status = %s, completed_at = NOW(), output = %s WHERE id = %s",
-                (status, json.dumps(output) if output else None, job_id)
+                (status, json.dumps(output) if output else None, job_id),
             )
         elif status == "FAILED":
             cursor.execute(
                 "UPDATE jobs SET status = %s, completed_at = NOW(), error_log = %s WHERE id = %s",
-                (status, error, job_id)
+                (status, error, job_id),
             )
 
         conn.commit()
         cursor.close()
         conn.close()
-        logger.info(f"Updated job {job_id} to {status}")
-    except Exception as e:
-        logger.error(f"Failed to update job status: {e}")
+        logger.info(f"[DB] Updated job {job_id} → {status}")
+    except Exception as exc:
+        logger.error(f"[DB] update_job_status error: {exc}")
 
 
-def register_worker_etcd():
-    """Register worker in etcd with TTL."""
-    try:
-        etcd = etcd_client(host=ETCD_HOST, port=ETCD_PORT)
-        key = f"/workers/{WORKER_ID}"
-
-        # Create lease with 10 second TTL
-        lease = etcd.lease(10)
-
-        # Put worker info with lease
-        worker_info = f"app=sdxl-image-gen,queue=jobs:sdxl,status=ONLINE"
-        etcd.put(key, worker_info, lease=lease)
-
-        logger.info(f"[SUCCESS] Worker {WORKER_ID} registered in etcd")
-        return lease
-    except Exception as e:
-        logger.error(f"Failed to register in etcd: {e}")
-        return None
-
-
-def keep_alive_etcd(lease):
-    """Keep etcd lease alive."""
-    if lease:
-        try:
-            lease.refresh()
-            logger.debug(f"[HEARTBEAT] etcd lease refreshed successfully")
-        except Exception as e:
-            logger.error(f"[HEARTBEAT] Failed to refresh etcd lease: {e}")
-            logger.error(f"[HEARTBEAT] Worker will appear OFFLINE to orchestrator!")
-
-
-def start_heartbeat_thread(lease):
-    """Start background thread that keeps etcd lease alive."""
-    consecutive_failures = 0
-    max_failures = 3
-
-    def heartbeat_loop():
-        nonlocal consecutive_failures
-        while True:
-            try:
-                keep_alive_etcd(lease)
-                consecutive_failures = 0
-            except Exception as e:
-                consecutive_failures += 1
-                logger.error(f"[HEARTBEAT] Error ({consecutive_failures}/{max_failures}): {e}")
-
-                if consecutive_failures >= max_failures:
-                    logger.critical(f"[HEARTBEAT] Failed {max_failures} times - worker may be considered offline!")
-                    logger.critical("[HEARTBEAT] Check etcd connectivity and restart worker if necessary")
-
-            time.sleep(3)
-    
-    thread = threading.Thread(target=heartbeat_loop, daemon=True)
-    thread.start()
-    logger.info("[HEARTBEAT] Background etcd heartbeat thread started")
-    return thread
+# ── job processing ────────────────────────────────────────────────────────────
 
 
 def mark_worker_active(redis_client):
-    """Mark worker as currently processing a job."""
     try:
         from datetime import datetime
+
         redis_client.setex(
             f"worker:{WORKER_ID}:last_active",
-            120,  # Expires in 2 minutes
-            datetime.utcnow().isoformat()
+            120,
+            datetime.utcnow().isoformat(),
         )
-    except Exception as e:
-        logger.error(f"Failed to mark worker active: {e}")
+    except Exception as exc:
+        logger.error(f"[REDIS] mark_worker_active error: {exc}")
 
 
 def process_job(payload, redis_client):
-    """Process a single job."""
     try:
-        # Parse protobuf
         job = worker_pb2.JobRequest()
         job.ParseFromString(payload)
 
-        logger.info(f"[PROCESSING] Processing job {job.job_id} for app {job.app_id}")
+        logger.info(f"[JOB] Processing {job.job_id} for app {job.app_id}")
 
-        # Mark worker as busy
         mark_worker_active(redis_client)
 
-        # Validate app_id
-        if job.app_id != "sdxl-image-gen":
-            error_msg = f"Worker for sdxl-image-gen received job for {job.app_id}"
+        if job.app_id != APP_ID:
+            error_msg = f"Worker for {APP_ID} received job for {job.app_id}"
             logger.error(error_msg)
             update_job_status(job.job_id, "FAILED", error=error_msg)
             return
 
-        # Update status to PROCESSING
         update_job_status(job.job_id, "PROCESSING")
 
-        # Convert params to dict
         params = dict(job.params)
-
-        # Process with handler
         result = handler.process(job.job_id, params)
 
-        # Update based on result
         if result.get("success"):
-            logger.info(f"[SUCCESS] Job {job.job_id} completed successfully")
+            logger.info(f"[JOB] {job.job_id} COMPLETED")
             update_job_status(job.job_id, "COMPLETED", output=result.get("output"))
         else:
-            logger.error(f"[ERROR] Job {job.job_id} failed: {result.get('error')}")
+            logger.error(f"[JOB] {job.job_id} FAILED: {result.get('error')}")
             update_job_status(job.job_id, "FAILED", error=result.get("error"))
 
-    except Exception as e:
-        logger.error(f"Error processing job: {e}", exc_info=True)
+    except Exception as exc:
+        logger.error(f"[JOB] Error processing job: {exc}", exc_info=True)
         try:
-            job_id = job.job_id if 'job' in locals() else "unknown"
-            update_job_status(job_id, "FAILED", error=str(e))
-        except:
+            job_id = job.job_id if "job" in locals() else "unknown"
+            update_job_status(job_id, "FAILED", error=str(exc))
+        except Exception:
             pass
 
 
-def start_http_server():
-    """Start HTTP server for cleanup endpoint in background thread."""
-    port = int(os.getenv("CLEANUP_PORT", "8000"))
-    server = HTTPServer(('0.0.0.0', port), CleanupHandler)
-    logger.info(f"[HTTP] Cleanup endpoint running on port {port}")
-    server.serve_forever()
+# ── main ──────────────────────────────────────────────────────────────────────
 
 
 def main():
-    """Main worker loop."""
-    logger.info(f"[STARTUP] Starting SDXL Worker")
-    logger.info(f"Worker ID: {WORKER_ID}")
-    logger.info(f"Queue: {STREAM_KEY}")
-    logger.info(f"App ID: sdxl-image-gen")
+    global handler
 
-    # Start GPU metrics collector
+    logger.info(f"[STARTUP] Starting SDXL Worker | ID={WORKER_ID}")
+
+    # GPU metrics collector
     metrics_collector = GPUMetricsCollector(worker_id=WORKER_ID, interval_seconds=5)
     metrics_collector.start()
-    logger.info("[SUCCESS] GPU metrics collector started")
+    logger.info("[STARTUP] GPU metrics collector started")
 
-    # Start HTTP server in background thread
-    http_thread = threading.Thread(target=start_http_server, daemon=True)
-    http_thread.start()
+    # HTTP server (cleanup + status endpoints)
+    threading.Thread(target=start_http_server, daemon=True).start()
 
-    # Connect to Redis
+    # Redis
     try:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=False)
         r.ping()
-        logger.info("[SUCCESS] Connected to Redis")
-    except Exception as e:
-        logger.error(f"[ERROR] Failed to connect to Redis: {e}")
+        logger.info("[REDIS] Connected")
+    except Exception as exc:
+        logger.error(f"[REDIS] Connection failed: {exc}")
         sys.exit(1)
 
-    # Create consumer group
+    # Handler — publish_state is wired as the lifecycle callback so the handler
+    # notifies us on every model load/unload and job start/finish.
+    from handler import SDXLHandler
+
+    handler = SDXLHandler(state_callback=publish_state)
+
+    # Consumer group
     try:
         r.xgroup_create(STREAM_KEY, GROUP_NAME, id="0", mkstream=True)
-        logger.info(f"[SUCCESS] Created consumer group: {GROUP_NAME}")
-    except redis.exceptions.ResponseError as e:
-        if "BUSYGROUP" in str(e):
-            logger.info(f"Consumer group {GROUP_NAME} already exists")
+        logger.info(f"[REDIS] Created consumer group: {GROUP_NAME}")
+    except redis.exceptions.ResponseError as exc:
+        if "BUSYGROUP" in str(exc):
+            logger.info(f"[REDIS] Consumer group {GROUP_NAME} already exists")
         else:
-            logger.error(f"Error creating consumer group: {e}")
+            logger.error(f"[REDIS] Error creating consumer group: {exc}")
 
-    # Register in etcd
-    lease = register_worker_etcd()
-    start_heartbeat_thread(lease)
+    # etcd — register first, then start heartbeat
+    lease = register_etcd()
+    if lease:
+        start_heartbeat(lease)
 
-    # Main loop
-    logger.info(f"[LISTENING] Listening for jobs on '{STREAM_KEY}'...")
-
-    # First, check for any pending messages from previous worker instances
-    logger.info("[STARTUP] Checking for pending messages from previous instances...")
+    # Reclaim pending messages from a previous crash
+    logger.info("[STARTUP] Checking for pending messages from previous instances…")
     try:
         pending = r.xpending_range(STREAM_KEY, GROUP_NAME, "-", "+", 10)
         if pending:
-            logger.info(f"[STARTUP] Found {len(pending)} pending message(s), claiming and processing...")
+            logger.info(
+                f"[STARTUP] Found {len(pending)} pending message(s), reclaiming…"
+            )
             for msg in pending:
-                message_id = msg['message_id']
-                # Claim the message with minimal idle time (0)
-                claimed = r.xclaim(STREAM_KEY, GROUP_NAME, WORKER_ID, min_idle_time=0, message_ids=[message_id])
+                message_id = msg["message_id"]
+                claimed = r.xclaim(
+                    STREAM_KEY,
+                    GROUP_NAME,
+                    WORKER_ID,
+                    min_idle_time=0,
+                    message_ids=[message_id],
+                )
                 if claimed:
                     for claimed_msg in claimed:
                         msg_id, fields = claimed_msg
-                        logger.info(f"[STARTUP] Processing claimed pending message {msg_id}")
+                        logger.info(f"[STARTUP] Processing claimed message {msg_id}")
                         try:
-                            process_job(fields[b'payload'], r)
-                        except Exception as e:
-                            logger.error(f"[STARTUP] Failed to process pending message {msg_id}: {e}")
+                            process_job(fields[b"payload"], r)
+                        except Exception as exc:
+                            logger.error(
+                                f"[STARTUP] Failed to process pending message {msg_id}: {exc}"
+                            )
                         finally:
                             r.xack(STREAM_KEY, GROUP_NAME, msg_id)
                             r.xdel(STREAM_KEY, msg_id)
-                            logger.info(f"[CLEANUP] Removed claimed message {msg_id} from stream")
-    except Exception as e:
-        logger.warning(f"[STARTUP] Error processing pending messages: {e}")
+    except Exception as exc:
+        logger.warning(f"[STARTUP] Pending message recovery error: {exc}")
 
-    logger.info("[STARTUP] Pending messages processed, entering main loop...")
+    logger.info(f"[READY] Listening on '{STREAM_KEY}'…")
 
     while not shutdown_flag.is_set():
         try:
-            # Read from stream
             entries = r.xreadgroup(
                 GROUP_NAME,
                 WORKER_ID,
                 {STREAM_KEY: ">"},
                 count=1,
-                block=2000  # 2 second timeout
+                block=2000,
             )
-
             if entries:
                 for stream, messages in entries:
                     for message_id, fields in messages:
                         try:
-                            process_job(fields[b'payload'], r)
-                        except Exception as e:
-                            logger.error(f"[ERROR] Failed to process message {message_id}: {e}")
+                            process_job(fields[b"payload"], r)
+                        except Exception as exc:
+                            logger.error(
+                                f"[MAIN] Failed to process message {message_id}: {exc}"
+                            )
                         finally:
                             r.xack(STREAM_KEY, GROUP_NAME, message_id)
                             r.xdel(STREAM_KEY, message_id)
-                            logger.info(f"[CLEANUP] Removed message {message_id} from stream")
 
-        except redis.RedisError as e:
-            logger.error(f"Redis error in main loop: {e}")
+        except redis.RedisError as exc:
+            logger.error(f"[REDIS] Error in main loop: {exc}")
             time.sleep(1)
-        except Exception as e:
-            logger.error(f"Error in main loop: {e}", exc_info=True)
+        except Exception as exc:
+            logger.error(f"[MAIN] Loop error: {exc}", exc_info=True)
             time.sleep(1)
 
-    logger.info("Shutting down worker...")
+    logger.info("[SHUTDOWN] Worker exiting")
 
 
 if __name__ == "__main__":

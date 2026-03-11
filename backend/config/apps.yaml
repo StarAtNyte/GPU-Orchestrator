@@ -5,12 +5,20 @@ apps:
     name: "Qwen3.5 Chat"
     type: "local"
     queue: "jobs:qwen35-chat"
+    save_history: false
     description: "Chat with Qwen3.5-35B-A3B (MoE, 22GB Q4) — streaming via Redis Streams"
     gpu_vram_gb: 22
     docker_image: "backend-qwen35-chat-worker:latest"
     container_name: "qwen35-chat-worker"
     idle_timeout_seconds: 300
     startup_timeout_seconds: 180
+    environment:
+      MODEL_DIR: "/models"
+      HF_REPO: "unsloth/Qwen3.5-35B-A3B-GGUF"
+      MODEL_FILE: "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"
+      N_CTX: "16384"
+      N_GPU_LAYERS: "46"
+      IDLE_TIMEOUT: "300"
     parameters:
       - name: "messages"
         type: "string"
@@ -111,6 +119,9 @@ apps:
     container_name: "qwen-image-edit-worker"
     idle_timeout_seconds: 300
     startup_timeout_seconds: 180
+    environment:
+      HF_HOME: "/models"
+      TRANSFORMERS_CACHE: "/models"
     parameters:
       - name: "prompt"
         type: "string"
@@ -143,6 +154,9 @@ apps:
     container_name: "qwen-image-variations-worker"
     idle_timeout_seconds: 300
     startup_timeout_seconds: 180
+    environment:
+      HF_HOME: "/models"
+      TRANSFORMERS_CACHE: "/models"
     parameters:
       - name: "image_base64"
         type: "string"

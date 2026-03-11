@@ -31,7 +31,11 @@ type AppConfig struct {
 	IdleTimeoutSeconds    int            `yaml:"idle_timeout_seconds"`
 	StartupTimeoutSeconds int            `yaml:"startup_timeout_seconds"`
 	TimeoutSeconds        int            `yaml:"timeout_seconds"`
-	Parameters            []AppParameter `yaml:"parameters"`
+	CleanupPort           int               `yaml:"cleanup_port"` // HTTP port for /cleanup endpoint (default: 8000)
+	Environment           map[string]string `yaml:"environment"`  // Extra env vars passed to the container (e.g. N_CTX, MODEL_DIR)
+	Volumes               []string          `yaml:"volumes"`      // Extra bind-mount strings ("host:container[:opts]")
+	SaveHistory           *bool             `yaml:"save_history"`
+	Parameters            []AppParameter    `yaml:"parameters"`
 }
 
 // AppRegistry holds all app configurations

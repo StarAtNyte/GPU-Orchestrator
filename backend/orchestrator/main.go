@@ -373,6 +373,19 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"job_id": jobID, "status": "queued"})
 }
 
+// parseEtcdStatus extracts the "status" field from a worker's etcd value.
+// Expected format: "app=foo,queue=jobs:bar,status=WARM"
+// Returns one of: "WARM", "IDLE", "PROCESSING", "ONLINE", or "" if not found.
+func parseEtcdStatus(value string) string {
+	for _, part := range strings.Split(value, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) == 2 && kv[0] == "status" {
+			return kv[1]
+		}
+	}
+	return ""
+}
+
 // watchWorkers monitors etcd for worker registration and heartbeats
 func watchWorkers() {
 	log.Println("[INFO] Watching for workers in etcd...")
@@ -385,24 +398,22 @@ func watchWorkers() {
 		workerMutex.Lock()
 		for _, kv := range resp.Kvs {
 			workerID := string(kv.Key)[len("/workers/"):]
+			publishedStatus := parseEtcdStatus(string(kv.Value))
 
-			// Check if worker already exists in our registry (started by us)
 			if existing := workers[workerID]; existing != nil {
 				existing.LastHeartbeat = time.Now()
-				if existing.State == WorkerStateStarting {
-					existing.State = WorkerStateReady
-				}
-				log.Printf("[INFO] Updated existing worker: %s (state: %s)", workerID, existing.State)
+				applyEtcdStateToWorker(existing, publishedStatus, false)
+				log.Printf("[INFO] Loaded existing worker: %s (state: %s)", workerID, existing.State)
 			} else {
-				// External worker (not started by orchestrator)
+				initialState := etcdStatusToWorkerState(publishedStatus)
 				workers[workerID] = &WorkerInfo{
-					WorkerID:         workerID,
-					LastHeartbeat:    time.Now(),
-					State:            WorkerStateReady,
-					LastActivityTime: time.Now(),
+					WorkerID:           workerID,
+					LastHeartbeat:      time.Now(),
+					State:              initialState,
+					LastActivityTime:   time.Now(),
 					IdleTimeoutSeconds: 300,
 				}
-				log.Printf("[INFO] Loaded external worker: %s", workerID)
+				log.Printf("[INFO] Loaded external worker: %s (state: %s)", workerID, initialState)
 			}
 		}
 		workerMutex.Unlock()
@@ -420,23 +431,27 @@ func watchWorkers() {
 			case clientv3.EventTypePut:
 				workerMutex.Lock()
 
-				// Parse worker info from etcd value
+				publishedStatus := parseEtcdStatus(string(event.Kv.Value))
+
 				if existing := workers[workerID]; existing != nil {
 					existing.LastHeartbeat = time.Now()
-					if existing.State == WorkerStateStarting {
-						existing.State = WorkerStateReady
-						log.Printf("[ETCD] Worker %s transitioned to READY", workerID)
+					prevState := existing.State
+					applyEtcdStateToWorker(existing, publishedStatus, true)
+					if existing.State != prevState {
+						log.Printf("[ETCD] Worker %s: %s → %s (via etcd publish)",
+							workerID, prevState, existing.State)
 					}
 				} else {
-					// Externally started worker
+					// Externally started worker (not launched by this orchestrator)
+					initialState := etcdStatusToWorkerState(publishedStatus)
 					workers[workerID] = &WorkerInfo{
 						WorkerID:           workerID,
 						LastHeartbeat:      time.Now(),
-						State:              WorkerStateReady,
+						State:              initialState,
 						LastActivityTime:   time.Now(),
 						IdleTimeoutSeconds: 300,
 					}
-					log.Printf("[ETCD] External worker %s registered (state: READY)", workerID)
+					log.Printf("[ETCD] External worker %s registered (state: %s)", workerID, initialState)
 				}
 
 				workerMutex.Unlock()
@@ -461,6 +476,47 @@ func watchWorkers() {
 
 				workerMutex.Unlock()
 			}
+		}
+	}
+}
+
+// etcdStatusToWorkerState converts a published etcd status string to a WorkerState.
+// Used when seeing a worker for the first time (no prior orchestrator state to guard).
+func etcdStatusToWorkerState(status string) WorkerState {
+	switch status {
+	case "WARM":
+		return WorkerStateWarm
+	case "IDLE":
+		return WorkerStateIdle
+	case "PROCESSING":
+		return WorkerStateProcessing
+	default:
+		return WorkerStateReady
+	}
+}
+
+// applyEtcdStateToWorker updates a WorkerInfo's State based on the status string
+// the worker published to etcd. When guardProcessing is true (live watch events)
+// we never downgrade a PROCESSING worker based solely on an etcd heartbeat — the
+// job-completion monitor is authoritative for the PROCESSING → WARM transition.
+func applyEtcdStateToWorker(w *WorkerInfo, publishedStatus string, guardProcessing bool) {
+	switch publishedStatus {
+	case "WARM":
+		// Always trust the worker's WARM publication — the worker only publishes
+		// WARM after a job completes. CurrentJobID is not set for external workers
+		// so we cannot rely on monitorJobCompletions for the PROCESSING→WARM transition.
+		w.State = WorkerStateWarm
+		w.LastActivityTime = time.Now()
+		w.CurrentJobID = ""
+	case "IDLE":
+		w.State = WorkerStateIdle
+		w.LastActivityTime = time.Now()
+	case "PROCESSING":
+		w.State = WorkerStateProcessing
+	default:
+		// "ONLINE" or legacy heartbeat — only advance STARTING → READY
+		if w.State == WorkerStateStarting {
+			w.State = WorkerStateReady
 		}
 	}
 }
@@ -576,6 +632,14 @@ func userJobsHandler(w http.ResponseWriter, r *http.Request) {
 	appID := r.URL.Query().Get("app_id")
 	status := r.URL.Query().Get("status")
 
+	// Build list of app IDs that have save_history: false
+	var excludedApps []string
+	for id, cfg := range appRegistry {
+		if cfg.SaveHistory != nil && !*cfg.SaveHistory {
+			excludedApps = append(excludedApps, id)
+		}
+	}
+
 	// Build query
 	query := `
 		SELECT id, app_id, status, created_at, started_at, completed_at, params, output, error_log
@@ -587,6 +651,11 @@ func userJobsHandler(w http.ResponseWriter, r *http.Request) {
 	if appID != "" {
 		query += " AND app_id = $" + fmt.Sprintf("%d", len(args)+1)
 		args = append(args, appID)
+	} else if len(excludedApps) > 0 {
+		for _, excluded := range excludedApps {
+			args = append(args, excluded)
+			query += " AND app_id != $" + fmt.Sprintf("%d", len(args))
+		}
 	}
 
 	if status != "" {
@@ -1089,12 +1158,43 @@ func monitorStreams() {
 						}
 					}(appID)
 				} else {
-					log.Printf("[STREAM MONITOR] GPU busy, job queued for app %s (pending: %d)", appID, length)
+					// Priority 1: preempt a WARM worker (model loaded, not processing).
+					// Calling /cleanup unloads the model without killing the container —
+					// it's fast, non-destructive, and the container keeps its queue listener.
+					warmWorkerID := getWarmWorkerForOtherApp(appID)
+					if warmWorkerID != "" {
+						log.Printf("[STREAM MONITOR] Preempting WARM worker %s (model offload) to free GPU for app %s",
+							warmWorkerID, appID)
+						go func(wid, aid, qname string) {
+							if err := PreemptWorkerGPU(wid); err != nil {
+								log.Printf("[STREAM MONITOR] GPU preemption failed for %s: %v — falling back to full stop", wid, err)
+								StopWorker(wid)
+							} else {
+								log.Printf("[STREAM MONITOR] GPU freed via preemption, starting worker for app %s", aid)
+								if _, err := StartWorkerForApp(aid); err != nil {
+									log.Printf("[STREAM MONITOR] Failed to start worker for app %s after preemption: %v", aid, err)
+								}
+							}
+						}(warmWorkerID, appID, queueName)
+						continue
+					}
+
+					// Priority 2: stop an IDLE/READY worker from another app (no VRAM held,
+					// but we still want a clean slate before starting a new container).
+					idleWorkerID := getIdleWorkerForOtherApp(appID)
+					if idleWorkerID != "" {
+						log.Printf("[STREAM MONITOR] Stopping idle worker %s to make room for app %s", idleWorkerID, appID)
+						go StopWorker(idleWorkerID)
+					} else {
+						log.Printf("[STREAM MONITOR] GPU busy (PROCESSING), job queued for app %s (pending: %d)", appID, length)
+					}
 				}
 			}
 		}
 	}
 }
+
+
 
 // monitorIdleWorkers stops workers that have been idle for too long
 func monitorIdleWorkers() {
@@ -1107,13 +1207,17 @@ func monitorIdleWorkers() {
 		workersToStop := []string{}
 
 		for workerID, info := range workers {
-			if info.State == WorkerStateIdle {
+			// Monitor both WARM (model loaded, GPU VRAM occupied) and IDLE
+			// (model unloaded, container still running) for idle timeout.
+			// The worker's own idle timer handles WARM → IDLE transitions in
+			// most cases; this monitor is a safety-net stop for the container.
+			if info.State == WorkerStateWarm || info.State == WorkerStateIdle {
 				idleDuration := time.Since(info.LastActivityTime)
 				timeout := time.Duration(info.IdleTimeoutSeconds) * time.Second
 
 				if idleDuration > timeout {
-					log.Printf("[IDLE MONITOR] Worker %s idle for %v (timeout: %v), stopping",
-						workerID, idleDuration, timeout)
+					log.Printf("[IDLE MONITOR] Worker %s (%s) idle for %v (timeout: %v), stopping container",
+						workerID, info.State, idleDuration, timeout)
 					workersToStop = append(workersToStop, workerID)
 				}
 			}
@@ -1144,11 +1248,14 @@ func monitorJobCompletions() {
 				).Scan(&status)
 
 				if err == nil && (status == "COMPLETED" || status == "FAILED") {
-					info.State = WorkerStateIdle
-					info.LastActivityTime = time.Now()
-					info.CurrentJobID = ""
-					log.Printf("[JOB MONITOR] Worker %s completed job, now IDLE", workerID)
-				}
+						// The model is still loaded in GPU VRAM — the worker's idle timer
+						// will call offload_model() after IdleTimeout seconds, transitioning
+						// it WARM → IDLE at that point. The orchestrator mirrors this here.
+						info.State = WorkerStateWarm
+						info.LastActivityTime = time.Now()
+						info.CurrentJobID = ""
+						log.Printf("[JOB MONITOR] Worker %s completed job → WARM (model still in VRAM, idle timer running)", workerID)
+					}
 			}
 		}
 

@@ -27,19 +27,26 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-MODEL_DIR    = os.getenv("MODEL_DIR",    "/models")
-HF_REPO      = os.getenv("HF_REPO",      "unsloth/Qwen3.5-35B-A3B-GGUF")
-MODEL_FILE   = os.getenv("MODEL_FILE",   "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf")
-MMPROJ_FILE  = os.getenv("MMPROJ_FILE",  "mmproj-F16.gguf")
-MODEL_PATH   = os.path.join(MODEL_DIR, MODEL_FILE)
-MMPROJ_PATH  = os.path.join(MODEL_DIR, MMPROJ_FILE)
+MODEL_DIR = os.getenv("MODEL_DIR", "/models")
+HF_REPO = os.getenv("HF_REPO", "unsloth/Qwen3.5-35B-A3B-GGUF")
+MODEL_FILE = os.getenv("MODEL_FILE", "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf")
+MMPROJ_FILE = os.getenv("MMPROJ_FILE", "mmproj-F16.gguf")
+DISABLE_VISION = os.getenv("DISABLE_VISION", "true").lower() in ("1", "true", "yes")
+MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILE)
+MMPROJ_PATH = os.path.join(MODEL_DIR, MMPROJ_FILE)
 
-N_CTX           = int(os.getenv("N_CTX",          "32768"))
-N_GPU_LAYERS    = int(os.getenv("N_GPU_LAYERS",    "99"))
-N_THREADS       = int(os.getenv("N_THREADS",       "8"))
-IDLE_TIMEOUT    = int(os.getenv("IDLE_TIMEOUT",    "300"))
-SERVER_PORT     = int(os.getenv("LLAMA_SERVER_PORT","18080"))
-SERVER_URL      = f"http://127.0.0.1:{SERVER_PORT}"
+N_CTX = int(os.getenv("N_CTX", "16384"))
+N_GPU_LAYERS = int(os.getenv("N_GPU_LAYERS", "99"))
+N_THREADS = int(os.getenv("N_THREADS", "8"))
+N_UBATCH = int(os.getenv("N_UBATCH", "256"))
+
+# When vision is enabled, mmproj takes ~857 MiB extra VRAM.
+# Auto-reduce context to 8192 (KV: 170→85 MiB) to fit. Override with N_CTX_VISION.
+N_CTX_VISION = int(os.getenv("N_CTX_VISION", "8192"))
+N_UBATCH_VISION = int(os.getenv("N_UBATCH_VISION", "256"))
+IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "300"))
+SERVER_PORT = int(os.getenv("LLAMA_SERVER_PORT", "18080"))
+SERVER_URL = f"http://127.0.0.1:{SERVER_PORT}"
 
 WEB_SEARCH_TOOL = {
     "type": "function",
@@ -74,8 +81,14 @@ ARXIV_SEARCH_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Search terms (e.g. 'monocular 3D Gaussian Splatting single image')"},
-                "max_results": {"type": "integer", "description": "Number of papers to return (default 5, max 10)"},
+                "query": {
+                    "type": "string",
+                    "description": "Search terms (e.g. 'monocular 3D Gaussian Splatting single image')",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Number of papers to return (default 5, max 10)",
+                },
             },
             "required": ["query"],
         },
@@ -84,13 +97,27 @@ ARXIV_SEARCH_TOOL = {
 
 
 class Qwen35ChatHandler:
-    def __init__(self, redis_client=None, worker_id="qwen35-chat-worker"):
-        self.server_proc   = None
-        self.redis_client  = redis_client
-        self.worker_id     = worker_id
-        self.last_used     = None
+    def __init__(
+        self, redis_client=None, worker_id="qwen35-chat-worker", state_callback=None
+    ):
+        self.server_proc = None
+        self.redis_client = redis_client
+        self.worker_id = worker_id
+        self.last_used = None
         self.cleanup_timer = None
-        self._model_lock   = threading.Lock()
+        self._model_lock = threading.Lock()
+        # Callable(state: str) → None.  Called on every model-lifecycle event so
+        # main.py can push the new state to etcd immediately.
+        # States: "IDLE" | "WARM" | "PROCESSING"
+        self._state_cb = state_callback
+
+    def _publish_state(self, state: str) -> None:
+        """Fire the state callback if one was provided (safe to call from any thread)."""
+        if self._state_cb is not None:
+            try:
+                self._state_cb(state)
+            except Exception as exc:
+                logger.warning(f"[STATE_CB] Failed to publish state={state}: {exc}")
 
     # ------------------------------------------------------------------
     # Model lifecycle
@@ -99,13 +126,15 @@ class Qwen35ChatHandler:
     def _download_model(self):
         """Download GGUF and mmproj from HuggingFace if not already present."""
         from huggingface_hub import hf_hub_download
+
         os.makedirs(MODEL_DIR, exist_ok=True)
         token = os.environ.get("HF_TOKEN") or None
 
         if not os.path.exists(MODEL_PATH):
             logger.info(f"Downloading {HF_REPO}/{MODEL_FILE} (~22 GB)…")
-            hf_hub_download(repo_id=HF_REPO, filename=MODEL_FILE,
-                            local_dir=MODEL_DIR, token=token)
+            hf_hub_download(
+                repo_id=HF_REPO, filename=MODEL_FILE, local_dir=MODEL_DIR, token=token
+            )
             logger.info(f"Download complete: {MODEL_PATH}")
         else:
             logger.info(f"Model found at {MODEL_PATH}")
@@ -113,8 +142,12 @@ class Qwen35ChatHandler:
         if not os.path.exists(MMPROJ_PATH):
             logger.info(f"Downloading vision encoder {MMPROJ_FILE}…")
             try:
-                hf_hub_download(repo_id=HF_REPO, filename=MMPROJ_FILE,
-                                local_dir=MODEL_DIR, token=token)
+                hf_hub_download(
+                    repo_id=HF_REPO,
+                    filename=MMPROJ_FILE,
+                    local_dir=MODEL_DIR,
+                    token=token,
+                )
                 logger.info(f"mmproj downloaded: {MMPROJ_PATH}")
             except Exception as e:
                 logger.warning(f"mmproj download failed (vision disabled): {e}")
@@ -130,26 +163,45 @@ class Qwen35ChatHandler:
 
             self._download_model()
 
+            vision_active = not DISABLE_VISION and os.path.exists(MMPROJ_PATH)
+            ctx = N_CTX_VISION if vision_active else N_CTX
+            ubatch = N_UBATCH_VISION if vision_active else N_UBATCH
+
             cmd = [
                 "llama-server",
-                "--model",       MODEL_PATH,
-                "--ctx-size",    str(N_CTX),
-                "--n-gpu-layers",str(N_GPU_LAYERS),
-                "--threads",     str(N_THREADS),
-                "--parallel",    "1",          # single slot — reduces KV/rs cache, prevents OOM
-                "--flash-attn", "on",        # halves KV cache VRAM, enables larger context
-                "--cache-type-k", "q8_0",     # quantize KV cache for more headroom
-                "--cache-type-v", "q8_0",
-                "--port",        str(SERVER_PORT),
-                "--host",        "127.0.0.1",
+                "--model",
+                MODEL_PATH,
+                "--ctx-size",
+                str(ctx),
+                "--n-gpu-layers",
+                str(N_GPU_LAYERS),
+                "--threads",
+                str(N_THREADS),
+                "--parallel",
+                "1",  # single slot — reduces KV/rs cache, prevents OOM
+                "--ubatch-size",
+                str(ubatch),  # micro-batch for compute buffer; smaller = less VRAM
+                "--flash-attn",
+                "on",  # halves KV cache VRAM, enables larger context
+                "--cache-type-k",
+                "q8_0",  # quantize KV cache for more headroom
+                "--cache-type-v",
+                "q8_0",
+                "--port",
+                str(SERVER_PORT),
+                "--host",
+                "127.0.0.1",
             ]
-            if os.path.exists(MMPROJ_PATH):
+            if vision_active:
                 cmd += ["--mmproj", MMPROJ_PATH]
                 logger.info("Vision projector attached")
+            elif DISABLE_VISION:
+                logger.info("Vision projector disabled (DISABLE_VISION=true)")
 
             logger.info(
                 f"Starting llama-server | {MODEL_FILE} "
-                f"| ctx={N_CTX} | gpu_layers={N_GPU_LAYERS} | port={SERVER_PORT}"
+                f"| ctx={ctx} | ubatch={ubatch} | gpu_layers={N_GPU_LAYERS} "
+                f"| vision={'on' if vision_active else 'off'} | port={SERVER_PORT}"
             )
             self.server_proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
@@ -161,7 +213,10 @@ class Qwen35ChatHandler:
                     out = self.server_proc.stdout.read().decode(errors="replace")
                     raise RuntimeError(f"llama-server exited:\n{out[-2000:]}")
                 try:
-                    if requests.get(f"{SERVER_URL}/health", timeout=2).status_code == 200:
+                    if (
+                        requests.get(f"{SERVER_URL}/health", timeout=2).status_code
+                        == 200
+                    ):
                         logger.info("llama-server ready")
                         return
                 except requests.exceptions.ConnectionError:
@@ -172,7 +227,7 @@ class Qwen35ChatHandler:
             raise RuntimeError("llama-server did not become ready within 5 minutes")
 
     def offload_model(self):
-        """Terminate llama-server to free GPU VRAM for other workers."""
+        """Terminate llama-server to free GPU VRAM for other workers (WARM → IDLE)."""
         with self._model_lock:
             if self.server_proc is None:
                 return
@@ -186,9 +241,11 @@ class Qwen35ChatHandler:
             except subprocess.TimeoutExpired:
                 self.server_proc.kill()
             self.server_proc = None
-            self.last_used   = None
+            self.last_used = None
             gc.collect()
-            logger.info("llama-server stopped")
+            logger.info("llama-server stopped — GPU VRAM freed")
+        # Publish IDLE outside the lock so the callback can itself acquire locks
+        self._publish_state("IDLE")
 
     def _reset_idle_timer(self):
         if self.cleanup_timer:
@@ -211,6 +268,7 @@ class Qwen35ChatHandler:
         """Run a DuckDuckGo search and return formatted text results."""
         try:
             from duckduckgo_search import DDGS
+
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=max_results))
             if not results:
@@ -240,7 +298,9 @@ class Qwen35ChatHandler:
                 f"&max_results={max_results}"
                 f"&sortBy=submittedDate&sortOrder=descending"
             )
-            req = urllib.request.Request(url, headers={"User-Agent": "qwen35-chat-worker/1.0"})
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "qwen35-chat-worker/1.0"}
+            )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 content = resp.read().decode("utf-8")
 
@@ -253,16 +313,16 @@ class Qwen35ChatHandler:
 
             lines = [f"arXiv papers (sorted by date, newest first) for: {query}\n"]
             for i, entry in enumerate(entries, 1):
-                title   = entry.find("atom:title",   ns)
+                title = entry.find("atom:title", ns)
                 summary = entry.find("atom:summary", ns)
-                pub     = entry.find("atom:published", ns)
-                pid     = entry.find("atom:id",      ns)
+                pub = entry.find("atom:published", ns)
+                pid = entry.find("atom:id", ns)
                 authors = entry.findall("atom:author", ns)
 
-                title_text   = (title.text   or "").strip().replace("\n", " ")
-                abstract     = (summary.text or "").strip().replace("\n", " ")[:300]
-                pub_date     = (pub.text or "")[:10]
-                paper_id     = (pid.text or "").strip()
+                title_text = (title.text or "").strip().replace("\n", " ")
+                abstract = (summary.text or "").strip().replace("\n", " ")[:300]
+                pub_date = (pub.text or "")[:10]
+                paper_id = (pid.text or "").strip()
                 author_names = [
                     (a.find("atom:name", ns).text or "")
                     for a in authors[:4]
@@ -310,24 +370,26 @@ class Qwen35ChatHandler:
         and call again.
         """
         body: Dict[str, Any] = {
-            "messages":        messages,
-            "temperature":     temperature,
-            "top_p":           top_p,
-            "top_k":           top_k,
-            "max_tokens":      max_tokens,
-            "presence_penalty":presence_penalty,
-            "stream":          True,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+            "max_tokens": max_tokens,
+            "presence_penalty": presence_penalty,
+            "stream": True,
         }
         if not enable_thinking:
             # Qwen3.5 ignores /no_think; the proper way is chat_template_kwargs
             body["chat_template_kwargs"] = {"enable_thinking": False}
         if tools:
-            body["tools"]       = tools
+            body["tools"] = tools
             body["tool_choice"] = "auto"
 
         resp = requests.post(
             f"{SERVER_URL}/v1/chat/completions",
-            json=body, stream=True, timeout=600,
+            json=body,
+            stream=True,
+            timeout=600,
         )
         if resp.status_code == 400:
             detail = resp.text[:500]
@@ -338,10 +400,10 @@ class Qwen35ChatHandler:
         resp.raise_for_status()
 
         parts: List[str] = []
-        token_count  = 0
-        think_open   = False
+        token_count = 0
+        think_open = False
         think_closed = False
-        tool_buf: Dict[int, Dict] = {}   # index → {id, name, arguments}
+        tool_buf: Dict[int, Dict] = {}  # index → {id, name, arguments}
 
         for raw_line in resp.iter_lines():
             if not raw_line or not raw_line.startswith(b"data: "):
@@ -350,9 +412,9 @@ class Qwen35ChatHandler:
             if data == b"[DONE]":
                 break
             try:
-                chunk  = json.loads(data)
+                chunk = json.loads(data)
                 choice = chunk["choices"][0]
-                delta  = choice.get("delta", {})
+                delta = choice.get("delta", {})
 
                 # ── reasoning content (thinking mode) ──────────────────
                 reasoning = delta.get("reasoning_content") or ""
@@ -411,14 +473,18 @@ class Qwen35ChatHandler:
         """
         Process a chat job.
         Streams tokens (and tool call status) to Redis Stream chat-stream:{job_id}.
+
+        State transitions inside this method:
+          IDLE / WARM → load_model() (no-op if already loaded) → PROCESSING → WARM
         """
         self.cancel_cleanup()
 
         try:
-            # Warmup: just load the model and signal done with no tokens
+            # Warmup: load the model and immediately signal done with no tokens
             if params.get("warmup", "false").lower() == "true":
                 stream_key = f"chat-stream:{job_id}"
                 self.load_model()
+                self._publish_state("WARM")  # model is now in VRAM, not inferring
                 if self.redis_client:
                     self.redis_client.xadd(stream_key, {"type": "done", "content": ""})
                     self.redis_client.expire(stream_key, 60)
@@ -428,15 +494,19 @@ class Qwen35ChatHandler:
                 return {"success": True, "output": {"response": "", "warmup": True}}
 
             self.load_model()
+            # Model is now in VRAM and we are about to start inference
+            self._publish_state("PROCESSING")
 
-            messages: List[Dict]  = json.loads(params.get("messages", "[]"))
-            temperature            = float(params.get("temperature",      "0.7"))
-            top_p                  = float(params.get("top_p",            "0.8"))
-            top_k                  = int(  params.get("top_k",            "20"))
-            max_tokens             = int(  params.get("max_tokens",       "8192"))
-            presence_penalty       = float(params.get("presence_penalty", "1.5"))
-            enable_thinking        = params.get("enable_thinking",  "false").lower() == "true"
-            enable_web_search      = params.get("enable_web_search","false").lower() == "true"
+            messages: List[Dict] = json.loads(params.get("messages", "[]"))
+            temperature = float(params.get("temperature", "0.7"))
+            top_p = float(params.get("top_p", "0.8"))
+            top_k = int(params.get("top_k", "20"))
+            max_tokens = int(params.get("max_tokens", "8192"))
+            presence_penalty = float(params.get("presence_penalty", "1.5"))
+            enable_thinking = params.get("enable_thinking", "false").lower() == "true"
+            enable_web_search = (
+                params.get("enable_web_search", "false").lower() == "true"
+            )
 
             if not messages:
                 return {"success": False, "error": "No messages provided"}
@@ -447,19 +517,25 @@ class Qwen35ChatHandler:
                 f"{' +search' if enable_web_search else ''} | {len(messages)} msgs"
             )
 
-            tools             = [WEB_SEARCH_TOOL, ARXIV_SEARCH_TOOL] if enable_web_search else None
-            working_messages  = list(messages)
-            total_tokens      = 0
-            final_text        = ""
-            MAX_TOOL_ROUNDS   = 5   # after this many search rounds, force a final response
+            tools = [WEB_SEARCH_TOOL, ARXIV_SEARCH_TOOL] if enable_web_search else None
+            working_messages = list(messages)
+            total_tokens = 0
+            final_text = ""
+            MAX_TOOL_ROUNDS = 5  # after this many search rounds, force a final response
 
             for _round in range(MAX_TOOL_ROUNDS + 2):
                 # After MAX_TOOL_ROUNDS, strip tools so the model is forced to respond
                 active_tools = tools if (tools and _round < MAX_TOOL_ROUNDS) else None
                 text, n_tok, pending = self._stream_round(
-                    stream_key, working_messages,
-                    temperature, top_p, top_k, max_tokens, presence_penalty,
-                    enable_thinking, active_tools,
+                    stream_key,
+                    working_messages,
+                    temperature,
+                    top_p,
+                    top_k,
+                    max_tokens,
+                    presence_penalty,
+                    enable_thinking,
+                    active_tools,
                 )
                 total_tokens += n_tok
 
@@ -468,21 +544,23 @@ class Qwen35ChatHandler:
                     break
 
                 # Build assistant tool-call message
-                working_messages.append({
-                    "role":    "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id":       tc["id"],
-                            "type":     "function",
-                            "function": {
-                                "name":      tc["name"],
-                                "arguments": tc["arguments"],
-                            },
-                        }
-                        for tc in pending
-                    ],
-                })
+                working_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": tc["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": tc["name"],
+                                    "arguments": tc["arguments"],
+                                },
+                            }
+                            for tc in pending
+                        ],
+                    }
+                )
 
                 # Execute each tool call
                 for tc in pending:
@@ -494,29 +572,45 @@ class Qwen35ChatHandler:
 
                     if tc["name"] == "web_search":
                         logger.info(f"[JOB {job_id}] web_search({query!r})")
-                        self._pub(stream_key, "tool_call",
-                                  json.dumps({"name": "web_search", "query": query}))
+                        self._pub(
+                            stream_key,
+                            "tool_call",
+                            json.dumps({"name": "web_search", "query": query}),
+                        )
                         result = self._web_search(query)
-                        self._pub(stream_key, "tool_result",
-                                  json.dumps({"name": "web_search", "query": query}))
+                        self._pub(
+                            stream_key,
+                            "tool_result",
+                            json.dumps({"name": "web_search", "query": query}),
+                        )
 
                     elif tc["name"] == "arxiv_search":
                         max_r = args.get("max_results", 8)
-                        logger.info(f"[JOB {job_id}] arxiv_search({query!r}, max={max_r})")
-                        self._pub(stream_key, "tool_call",
-                                  json.dumps({"name": "arxiv_search", "query": query}))
+                        logger.info(
+                            f"[JOB {job_id}] arxiv_search({query!r}, max={max_r})"
+                        )
+                        self._pub(
+                            stream_key,
+                            "tool_call",
+                            json.dumps({"name": "arxiv_search", "query": query}),
+                        )
                         result = self._arxiv_search(query, max_r)
-                        self._pub(stream_key, "tool_result",
-                                  json.dumps({"name": "arxiv_search", "query": query}))
+                        self._pub(
+                            stream_key,
+                            "tool_result",
+                            json.dumps({"name": "arxiv_search", "query": query}),
+                        )
 
                     else:
                         result = f"Unknown tool: {tc['name']}"
 
-                    working_messages.append({
-                        "role":         "tool",
-                        "tool_call_id": tc["id"],
-                        "content":      result,
-                    })
+                    working_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": result,
+                        }
+                    )
                 # loop → stream again with tool results in context
 
             # Signal completion
@@ -527,13 +621,15 @@ class Qwen35ChatHandler:
             logger.info(f"[JOB {job_id}] Done — {total_tokens} tokens")
             self.last_used = time.time()
             self._reset_idle_timer()
+            # Inference finished; model is still in VRAM with the idle timer running
+            self._publish_state("WARM")
 
             return {
                 "success": True,
                 "output": {
-                    "response":       final_text,
-                    "token_count":    total_tokens,
-                    "enable_thinking":enable_thinking,
+                    "response": final_text,
+                    "token_count": total_tokens,
+                    "enable_thinking": enable_thinking,
                 },
             }
 
@@ -549,4 +645,6 @@ class Qwen35ChatHandler:
                 except Exception:
                     pass
             self._reset_idle_timer()
+            # Even on error the model is still loaded and the idle timer is running
+            self._publish_state("WARM")
             return {"success": False, "error": str(e)}

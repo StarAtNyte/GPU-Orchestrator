@@ -307,7 +307,7 @@ services:
       HF_REPO: unsloth/Qwen3.5-35B-A3B-GGUF
       MODEL_FILE: Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf
       N_CTX: "16384"
-      N_GPU_LAYERS: "99"
+      N_GPU_LAYERS: "95"
       IDLE_TIMEOUT: "300"
     volumes:
       - ${HOME}/models/qwen35-chat:/models

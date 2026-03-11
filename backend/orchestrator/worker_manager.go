@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -16,12 +17,29 @@ import (
 type WorkerState string
 
 const (
-	WorkerStateAbsent     WorkerState = "ABSENT"
-	WorkerStateStarting   WorkerState = "STARTING"
-	WorkerStateReady      WorkerState = "READY"
+	WorkerStateAbsent   WorkerState = "ABSENT"
+	WorkerStateStarting WorkerState = "STARTING"
+
+	// WorkerStateReady: container is running and registered in etcd, but model is NOT
+	// yet loaded into GPU VRAM. GPU memory is free.
+	WorkerStateReady WorkerState = "READY"
+
+	// WorkerStateWarm: model IS loaded into GPU VRAM, worker is idle (not processing).
+	// This is the intermediate state between a finished job and the idle-timeout
+	// offload. GPU VRAM is occupied but compute is free. Can be preempted cheaply
+	// by calling the worker's /cleanup HTTP endpoint (no container stop needed).
+	WorkerStateWarm WorkerState = "WARM"
+
+	// WorkerStateProcessing: worker is actively running inference. Both GPU VRAM
+	// and compute are occupied. Cannot be preempted.
 	WorkerStateProcessing WorkerState = "PROCESSING"
-	WorkerStateIdle       WorkerState = "IDLE"
-	WorkerStateStopping   WorkerState = "STOPPING"
+
+	// WorkerStateIdle: model has been offloaded from GPU VRAM (either by the
+	// idle-timeout timer or by a preemption request). Container is still running
+	// and listening on its queue. GPU memory is free.
+	WorkerStateIdle WorkerState = "IDLE"
+
+	WorkerStateStopping WorkerState = "STOPPING"
 )
 
 // WorkerInfo holds information about a worker instance
@@ -35,17 +53,18 @@ type WorkerInfo struct {
 	CurrentJobID       string
 	StartedAt          time.Time
 	IdleTimeoutSeconds int
-	StartupFailures    int       // Track consecutive startup failures
-	LastFailureTime    time.Time // Last time worker failed to start
+	CleanupPort        int           // HTTP port for /cleanup and /status endpoints (default 8000)
+	StartupFailures    int           // Track consecutive startup failures
+	LastFailureTime    time.Time     // Last time worker failed to start
 	Backoff            time.Duration // Exponential backoff delay
 }
 
 var (
-	workers            map[string]*WorkerInfo
-	workerMutex        sync.RWMutex
-	gpuAllocationMutex sync.Mutex
-	dockerCli          *client.Client
-	workerFailureThreshold = 5 // Max consecutive failures before circuit breaker
+	workers                = make(map[string]*WorkerInfo)
+	workerMutex            sync.RWMutex
+	gpuAllocationMutex     sync.Mutex
+	dockerCli              *client.Client
+	workerFailureThreshold = 5               // Max consecutive failures before circuit breaker
 	workerMaxBackoff       = 5 * time.Minute // Max backoff delay
 )
 
@@ -84,6 +103,12 @@ func StartWorkerForApp(appID string) (string, error) {
 		workerID = fmt.Sprintf("%s-worker", appID)
 	}
 
+	// Resolve cleanup port (default 8000)
+	cleanupPort := appConfig.CleanupPort
+	if cleanupPort == 0 {
+		cleanupPort = 8000
+	}
+
 	// Check if worker already exists
 	workerMutex.Lock()
 	if existing := workers[workerID]; existing != nil {
@@ -93,7 +118,7 @@ func StartWorkerForApp(appID string) (string, error) {
 			if timeSinceLastFailure < existing.Backoff {
 				workerMutex.Unlock()
 				return "", fmt.Errorf("worker %s in circuit breaker (failures: %d, backoff: %v remaining)",
-					workerID, existing.StartupFailures, existing.Backoff - timeSinceLastFailure)
+					workerID, existing.StartupFailures, existing.Backoff-timeSinceLastFailure)
 			}
 			// Reset backoff if enough time has passed
 			log.Printf("[WORKER_MANAGER] Resetting circuit breaker for %s after %v", workerID, timeSinceLastFailure)
@@ -120,6 +145,7 @@ func StartWorkerForApp(appID string) (string, error) {
 		StartedAt:          time.Now(),
 		LastActivityTime:   time.Now(),
 		IdleTimeoutSeconds: idleTimeout,
+		CleanupPort:        cleanupPort,
 		StartupFailures:    0,
 		Backoff:            0,
 	}
@@ -148,18 +174,24 @@ func StartWorkerForApp(appID string) (string, error) {
 			fmt.Sprintf("APP_ID=%s", appID),
 			fmt.Sprintf("QUEUE_NAME=%s", appConfig.Queue),
 			fmt.Sprintf("HF_TOKEN=%s", getEnv("HF_TOKEN", "")),
+			fmt.Sprintf("CLEANUP_PORT=%d", cleanupPort),
 		},
 		Volumes: map[string]struct{}{
 			"/models": {},
 		},
 	}
 
+	// Append app-specific environment variables from apps.yaml
+	for k, v := range appConfig.Environment {
+		containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	// Host configuration with GPU support
 	hostConfig := &container.HostConfig{
 		NetworkMode: "backend_backend-network",
-		Binds: []string{
+		Binds: append([]string{
 			fmt.Sprintf("%s_models:/models", workerID),
-		},
+		}, appConfig.Volumes...),
 		Resources: container.Resources{
 			DeviceRequests: []container.DeviceRequest{
 				{
@@ -259,7 +291,7 @@ func StopWorker(workerID string) error {
 		return fmt.Errorf("worker %s not found", workerID)
 	}
 
-	// Check if worker is processing a job
+	// Check if worker is processing a job — never interrupt active inference
 	if workerInfo.State == WorkerStateProcessing {
 		workerMutex.Unlock()
 		return fmt.Errorf("worker %s is processing job %s, cannot stop", workerID, workerInfo.CurrentJobID)
@@ -269,7 +301,12 @@ func StopWorker(workerID string) error {
 	containerID := workerInfo.ContainerID
 	workerMutex.Unlock()
 
-	log.Printf("[WORKER_MANAGER] Stopping worker %s (container: %s)", workerID, containerID[:12])
+	// Use container name as fallback for externally-started workers with no ContainerID
+	stopTarget := containerID
+	if stopTarget == "" {
+		stopTarget = workerID
+	}
+	log.Printf("[WORKER_MANAGER] Stopping worker %s (target: %s)", workerID, stopTarget)
 
 	ctx := context.Background()
 	timeout := 30
@@ -278,8 +315,8 @@ func StopWorker(workerID string) error {
 	}
 
 	// Stop the container
-	if err := dockerCli.ContainerStop(ctx, containerID, stopOptions); err != nil {
-		log.Printf("[WORKER_MANAGER] Error stopping container %s: %v", containerID[:12], err)
+	if err := dockerCli.ContainerStop(ctx, stopTarget, stopOptions); err != nil {
+		log.Printf("[WORKER_MANAGER] Error stopping container %s: %v", stopTarget, err)
 	}
 
 	// Remove the container
@@ -287,8 +324,8 @@ func StopWorker(workerID string) error {
 		Force:         true,
 		RemoveVolumes: true,
 	}
-	if err := dockerCli.ContainerRemove(ctx, containerID, removeOptions); err != nil {
-		log.Printf("[WORKER_MANAGER] Error removing container %s: %v", containerID[:12], err)
+	if err := dockerCli.ContainerRemove(ctx, stopTarget, removeOptions); err != nil {
+		log.Printf("[WORKER_MANAGER] Error removing container %s: %v", stopTarget, err)
 	}
 
 	// Remove from workers map
@@ -297,6 +334,59 @@ func StopWorker(workerID string) error {
 	workerMutex.Unlock()
 
 	log.Printf("[WORKER_MANAGER] Worker %s stopped and removed", workerID)
+	return nil
+}
+
+// PreemptWorkerGPU tells a WARM worker to immediately offload its model from GPU VRAM
+// by calling its /cleanup HTTP endpoint. The container keeps running and continues to
+// listen on its queue — it transitions WARM → IDLE without being killed.
+//
+// Use this instead of StopWorker when you only need to free GPU VRAM; it is faster,
+// non-destructive, and allows the preempted worker to reload its model later.
+func PreemptWorkerGPU(workerID string) error {
+	workerMutex.RLock()
+	workerInfo, exists := workers[workerID]
+	if !exists {
+		workerMutex.RUnlock()
+		return fmt.Errorf("worker %s not found", workerID)
+	}
+
+	if workerInfo.State != WorkerStateWarm {
+		state := workerInfo.State
+		workerMutex.RUnlock()
+		return fmt.Errorf("worker %s is not in WARM state (current: %s) — cannot preempt", workerID, state)
+	}
+
+	cleanupPort := workerInfo.CleanupPort
+	if cleanupPort == 0 {
+		cleanupPort = 8000
+	}
+	workerMutex.RUnlock()
+
+	// POST to the worker's cleanup endpoint — blocks until the model is fully unloaded
+	url := fmt.Sprintf("http://%s:%d/cleanup", workerID, cleanupPort)
+	log.Printf("[PREEMPT] Requesting model offload from WARM worker %s → %s", workerID, url)
+
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	resp, err := httpClient.Post(url, "application/json", nil)
+	if err != nil {
+		return fmt.Errorf("HTTP call to %s failed: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("cleanup endpoint on %s returned status %d", workerID, resp.StatusCode)
+	}
+
+	// Model is now unloaded — GPU VRAM is free. Transition worker WARM → IDLE.
+	workerMutex.Lock()
+	if worker := workers[workerID]; worker != nil {
+		worker.State = WorkerStateIdle
+		worker.LastActivityTime = time.Now()
+		log.Printf("[PREEMPT] Worker %s: WARM → IDLE (GPU VRAM freed without container restart)", workerID)
+	}
+	workerMutex.Unlock()
+
 	return nil
 }
 
@@ -313,27 +403,52 @@ func GetWorkerForApp(appID string) *WorkerInfo {
 	return nil
 }
 
-// IsGPUAvailable checks if GPU is available for a new worker
+// IsGPUAvailable checks if the GPU is free for a new worker to load its model.
+//
+// Only WARM and PROCESSING workers actually occupy GPU VRAM.
+// READY and IDLE workers have no model in VRAM so the GPU is considered available.
 func IsGPUAvailable() (bool, error) {
-	// Check if any worker is currently running
 	workerMutex.RLock()
-	hasActiveWorker := false
+	defer workerMutex.RUnlock()
+
 	for _, worker := range workers {
-		if worker.State != WorkerStateAbsent && worker.State != WorkerStateStopping {
-			hasActiveWorker = true
-			break
+		if worker.State == WorkerStateWarm || worker.State == WorkerStateProcessing {
+			return false, nil
 		}
 	}
-	workerMutex.RUnlock()
-
-	// For single-GPU setup, only one worker can run at a time
-	if hasActiveWorker {
-		return false, nil
-	}
-
-	// Check GPU utilization via nvidia-smi (optional additional check)
-	// For now, we just check worker count
 	return true, nil
+}
+
+// getWarmWorkerForOtherApp returns the worker ID of a WARM worker that belongs to a
+// different app. WARM workers are the primary preemption target: we can free their
+// GPU VRAM cheaply by calling /cleanup without stopping the container.
+func getWarmWorkerForOtherApp(appID string) string {
+	workerMutex.RLock()
+	defer workerMutex.RUnlock()
+
+	for workerID, info := range workers {
+		if info.AppID != appID && info.State == WorkerStateWarm {
+			return workerID
+		}
+	}
+	return ""
+}
+
+// getIdleWorkerForOtherApp returns the worker ID of an IDLE or READY worker that
+// belongs to a different app. These workers have no model in VRAM; stopping them
+// frees container resources but not GPU VRAM (already free). Used as a fallback
+// when there is no WARM worker to preempt.
+func getIdleWorkerForOtherApp(appID string) string {
+	workerMutex.RLock()
+	defer workerMutex.RUnlock()
+
+	for workerID, info := range workers {
+		if info.AppID != appID &&
+			(info.State == WorkerStateIdle || info.State == WorkerStateReady) {
+			return workerID
+		}
+	}
+	return ""
 }
 
 // waitForWorkerReady waits for a worker to register in etcd
@@ -348,9 +463,9 @@ func waitForWorkerReady(workerID string, timeout time.Duration) error {
 			return fmt.Errorf("worker %s disappeared during startup", workerID)
 		}
 
-		if worker.State == WorkerStateReady {
+		if worker.State == WorkerStateReady || worker.State == WorkerStateIdle || worker.State == WorkerStateWarm {
 			workerMutex.RUnlock()
-			log.Printf("[WORKER_MANAGER] Worker %s is ready", workerID)
+			log.Printf("[WORKER_MANAGER] Worker %s is ready (state: %s)", workerID, worker.State)
 			return nil
 		}
 		workerMutex.RUnlock()

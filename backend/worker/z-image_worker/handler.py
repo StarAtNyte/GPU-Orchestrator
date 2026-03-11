@@ -16,12 +16,21 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 logger = logging.getLogger(__name__)
 
 class ZImageHandler:
-    def __init__(self):
+    def __init__(self, state_callback=None):
+        self._state_cb = state_callback
         self.pipe = None
         self.device = "cuda"
         self.last_used = None
         self.cleanup_timer = None
         self.cleanup_delay = 300  # 5 minutes in seconds
+
+    def _publish_state(self, state: str) -> None:
+        """Fire the state callback if one was provided (safe to call from any thread)."""
+        if self._state_cb is not None:
+            try:
+                self._state_cb(state)
+            except Exception as exc:
+                logger.warning(f"[STATE_CB] Failed to publish state={state}: {exc}")
 
     def load_model(self):
         """Load Z-Image model, keeping it cached for reuse."""
@@ -81,6 +90,7 @@ class ZImageHandler:
         gc.collect()
 
         logger.info("Z-Image model removed from GPU - memory freed")
+        self._publish_state("IDLE")
 
     def _schedule_cleanup(self):
         """Schedule model cleanup after delay."""
@@ -93,6 +103,7 @@ class ZImageHandler:
         self.cleanup_timer.daemon = True
         self.cleanup_timer.start()
         logger.info(f"Scheduled GPU cleanup in {self.cleanup_delay} seconds")
+        self._publish_state("WARM")
 
     def cancel_cleanup(self):
         """Cancel scheduled cleanup (called when new job arrives)."""
@@ -113,6 +124,7 @@ class ZImageHandler:
         try:
             # Cancel any scheduled cleanup since we have a new job
             self.cancel_cleanup()
+            self._publish_state("PROCESSING")
 
             self.load_model()
 

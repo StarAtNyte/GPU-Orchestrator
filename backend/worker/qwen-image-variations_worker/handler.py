@@ -41,7 +41,7 @@ def _collect_prompts(data) -> List[Dict[str, str]]:
 
 
 class QwenImageVariationsHandler:
-    def __init__(self, redis_client=None, worker_id="qwen-variations-worker"):
+    def __init__(self, redis_client=None, worker_id="qwen-variations-worker", state_callback=None):
         self.pipe = None
         self.device = "cuda"
         self.last_used = None
@@ -53,6 +53,15 @@ class QwenImageVariationsHandler:
         self.worker_id = worker_id
         self.gpu_lock = GPUMemoryLock(redis_client, worker_id) if redis_client else None
         self._load_prompts()
+        self._state_cb = state_callback
+
+    def _publish_state(self, state: str) -> None:
+        """Fire the state callback if one was provided (safe to call from any thread)."""
+        if self._state_cb is not None:
+            try:
+                self._state_cb(state)
+            except Exception as exc:
+                logger.warning(f"[STATE_CB] Failed to publish state={state}: {exc}")
 
     def _load_prompts(self):
         """Load and flatten all variation prompts from the JSON file."""
@@ -191,6 +200,7 @@ class QwenImageVariationsHandler:
         gc.collect()
 
         logger.info("Qwen model removed from GPU - memory freed")
+        self._publish_state("IDLE")
 
     def _schedule_cleanup(self):
         """Schedule model cleanup after delay."""
@@ -201,6 +211,7 @@ class QwenImageVariationsHandler:
         self.cleanup_timer.daemon = True
         self.cleanup_timer.start()
         logger.info(f"Scheduled GPU cleanup in {self.cleanup_delay} seconds")
+        self._publish_state("WARM")
 
     def cancel_cleanup(self):
         """Cancel scheduled cleanup."""
@@ -213,6 +224,7 @@ class QwenImageVariationsHandler:
         """Process a variation job with a randomly selected prompt."""
         try:
             self.cancel_cleanup()
+            self._publish_state("PROCESSING")
             self.load_model()
 
             image_b64 = params.get("image_base64", "")

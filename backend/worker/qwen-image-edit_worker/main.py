@@ -1,6 +1,11 @@
 """
 Qwen Image Edit Worker
 Isolated worker for image editing jobs using Qwen-Image-Edit
+
+Three-state lifecycle:
+  IDLE       → no model loaded, GPU memory free
+  WARM       → model loaded, waiting for next job
+  PROCESSING → actively running inference
 """
 
 import os
@@ -37,6 +42,8 @@ ETCD_PORT = int(os.getenv("ETCD_PORT", "2379"))
 STREAM_KEY = "jobs:qwen-image-edit"
 GROUP_NAME = "qwen-image-edit-workers"
 WORKER_ID = os.getenv("WORKER_ID", "qwen-image-edit-worker-1")
+APP_ID = "qwen-image-edit"
+QUEUE = STREAM_KEY
 
 shutdown_flag = threading.Event()
 
@@ -49,27 +56,64 @@ def handle_shutdown(sig, frame):
 signal.signal(signal.SIGTERM, handle_shutdown)
 signal.signal(signal.SIGINT, handle_shutdown)
 
+# ── global etcd state ─────────────────────────────────────────────────────────
+_etcd_client = None
+_etcd_key = None
+_etcd_lease = None
+_current_state = "IDLE"  # IDLE | WARM | PROCESSING
+_etcd_state_lock = threading.Lock()
+
 from handler import QwenImageEditHandler
 
 # Handler will be initialized after Redis connection
 handler = None
 
 
-class CleanupHandler(BaseHTTPRequestHandler):
+def _build_etcd_value(state: str) -> str:
+    return f"app={APP_ID},queue={QUEUE},status={state}"
+
+
+def publish_state(state: str) -> None:
+    global _current_state
+    with _etcd_state_lock:
+        _current_state = state
+        try:
+            if _etcd_client and _etcd_key and _etcd_lease:
+                _etcd_client.put(_etcd_key, _build_etcd_value(state), lease=_etcd_lease)
+                logger.info(f"[STATE] → {state}")
+        except Exception as exc:
+            logger.warning(f"[STATE] Failed to publish state={state}: {exc}")
+
+
+class WorkerHTTPHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        if self.path == '/cleanup':
+        if self.path == "/cleanup":
             try:
+                logger.info("[HTTP] /cleanup called — offloading model")
                 handler.offload_model()
+                publish_state("IDLE")
                 self.send_response(200)
-                self.send_header('Content-type', 'application/json')
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "message": "GPU memory cleaned"}).encode())
-            except Exception as e:
-                logger.error(f"Cleanup error: {e}")
+                self.wfile.write(json.dumps({"status": "success", "message": "Model offloaded"}).encode())
+            except Exception as exc:
+                logger.error(f"[HTTP] /cleanup error: {exc}")
                 self.send_response(500)
-                self.send_header('Content-type', 'application/json')
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
+                self.wfile.write(json.dumps({"status": "error", "message": str(exc)}).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_GET(self):
+        if self.path == "/status":
+            with _etcd_state_lock:
+                state = _current_state
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"worker_id": WORKER_ID, "model_state": state, "app_id": APP_ID}).encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -119,57 +163,44 @@ def update_job_status(job_id, status, error=None, output=None):
         logger.error(f"Failed to update job status: {e}")
 
 
-def register_worker_etcd():
-    """Register worker in etcd with TTL."""
+def register_etcd():
+    global _etcd_client, _etcd_key, _etcd_lease
     try:
-        etcd = etcd_client(host=ETCD_HOST, port=ETCD_PORT)
-        key = f"/workers/{WORKER_ID}"
-        lease = etcd.lease(10)
-        worker_info = f"app=qwen-image-edit,queue=jobs:qwen-image-edit,status=ONLINE"
-        etcd.put(key, worker_info, lease=lease)
-        logger.info(f"[SUCCESS] Worker {WORKER_ID} registered in etcd")
-        return lease
-    except Exception as e:
-        logger.error(f"Failed to register in etcd: {e}")
+        _etcd_client = etcd_client(host=ETCD_HOST, port=ETCD_PORT)
+        _etcd_key = f"/workers/{WORKER_ID}"
+        _etcd_lease = _etcd_client.lease(10)
+        _etcd_client.put(_etcd_key, _build_etcd_value("IDLE"), lease=_etcd_lease)
+        logger.info(f"[ETCD] Registered {WORKER_ID} (state=IDLE)")
+        return _etcd_lease
+    except Exception as exc:
+        logger.error(f"[ETCD] Registration failed: {exc}")
         return None
 
 
-def keep_alive_etcd(lease):
-    """Keep etcd lease alive."""
-    if lease:
-        try:
-            lease.refresh()
-            logger.debug(f"[HEARTBEAT] etcd lease refreshed successfully")
-        except Exception as e:
-            logger.error(f"[HEARTBEAT] Failed to refresh etcd lease: {e}")
-            logger.error(f"[HEARTBEAT] Worker will appear OFFLINE to orchestrator!")
-
-
-def start_heartbeat_thread(lease):
-    """Start background thread that keeps etcd lease alive."""
+def start_heartbeat(lease) -> None:
     consecutive_failures = 0
     max_failures = 3
 
-    def heartbeat_loop():
+    def _loop():
         nonlocal consecutive_failures
         while True:
             try:
-                keep_alive_etcd(lease)
-                consecutive_failures = 0
-            except Exception as e:
+                if _etcd_client and _etcd_key and lease:
+                    lease.refresh()
+                    with _etcd_state_lock:
+                        state = _current_state
+                    _etcd_client.put(_etcd_key, _build_etcd_value(state), lease=lease)
+                    consecutive_failures = 0
+            except Exception as exc:
                 consecutive_failures += 1
-                logger.error(f"[HEARTBEAT] Error ({consecutive_failures}/{max_failures}): {e}")
-
+                logger.error(f"[ETCD] Heartbeat error ({consecutive_failures}/{max_failures}): {exc}")
                 if consecutive_failures >= max_failures:
-                    logger.critical(f"[HEARTBEAT] Failed {max_failures} times - worker may be considered offline!")
-                    logger.critical("[HEARTBEAT] Check etcd connectivity and restart worker if necessary")
-
+                    logger.critical("[ETCD] Repeated heartbeat failures — worker may appear OFFLINE to orchestrator")
             time.sleep(3)
 
-    thread = threading.Thread(target=heartbeat_loop, daemon=True)
-    thread.start()
-    logger.info("[HEARTBEAT] Background etcd heartbeat thread started")
-    return thread
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    logger.info("[ETCD] Heartbeat thread started")
 
 
 def mark_worker_active(redis_client):
@@ -225,7 +256,7 @@ def process_job(payload, redis_client):
 def start_http_server():
     """Start HTTP server for cleanup endpoint in background thread."""
     port = int(os.getenv("CLEANUP_PORT", "8000"))
-    server = HTTPServer(('0.0.0.0', port), CleanupHandler)
+    server = HTTPServer(('0.0.0.0', port), WorkerHTTPHandler)
     logger.info(f"[HTTP] Cleanup endpoint running on port {port}")
     server.serve_forever()
 
@@ -251,8 +282,8 @@ def main():
 
         # Initialize handler with Redis client for GPU lock coordination
         global handler
-        handler = QwenImageEditHandler(redis_client=r, worker_id=WORKER_ID)
-        logger.info("[SUCCESS] Handler initialized with GPU lock coordination")
+        handler = QwenImageEditHandler(redis_client=r, worker_id=WORKER_ID, state_callback=publish_state)
+        logger.info("[SUCCESS] Handler initialized with GPU lock coordination + state callback")
     except Exception as e:
         logger.error(f"[ERROR] Failed to connect to Redis: {e}")
         sys.exit(1)
@@ -266,8 +297,9 @@ def main():
         else:
             logger.error(f"Error creating consumer group: {e}")
 
-    lease = register_worker_etcd()
-    start_heartbeat_thread(lease)
+    lease = register_etcd()
+    if lease:
+        start_heartbeat(lease)
 
     logger.info(f"[LISTENING] Listening for jobs on '{STREAM_KEY}'...")
 

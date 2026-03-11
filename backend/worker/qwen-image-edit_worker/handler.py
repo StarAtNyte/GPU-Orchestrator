@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class QwenImageEditHandler:
-    def __init__(self, redis_client=None, worker_id="qwen-edit-worker"):
+    def __init__(self, redis_client=None, worker_id="qwen-edit-worker", state_callback=None):
         self.pipe = None
         self.device = "cuda"
         self.last_used = None
@@ -34,6 +34,15 @@ class QwenImageEditHandler:
         self.redis_client = redis_client
         self.worker_id = worker_id
         self.gpu_lock = GPUMemoryLock(redis_client, worker_id) if redis_client else None
+        self._state_cb = state_callback
+
+    def _publish_state(self, state: str) -> None:
+        """Fire the state callback if one was provided (safe to call from any thread)."""
+        if self._state_cb is not None:
+            try:
+                self._state_cb(state)
+            except Exception as exc:
+                logger.warning(f"[STATE_CB] Failed to publish state={state}: {exc}")
 
     def load_model(self):
         """Load Qwen Image Edit model with 4-bit quantization."""
@@ -154,6 +163,7 @@ class QwenImageEditHandler:
         gc.collect()
 
         logger.info("Qwen Image Edit model removed from GPU - memory freed")
+        self._publish_state("IDLE")
 
     def _schedule_cleanup(self):
         """Schedule model cleanup after delay."""
@@ -164,6 +174,7 @@ class QwenImageEditHandler:
         self.cleanup_timer.daemon = True
         self.cleanup_timer.start()
         logger.info(f"Scheduled GPU cleanup in {self.cleanup_delay} seconds")
+        self._publish_state("WARM")
 
     def cancel_cleanup(self):
         """Cancel scheduled cleanup."""
@@ -176,6 +187,7 @@ class QwenImageEditHandler:
         """Process a single image editing job."""
         try:
             self.cancel_cleanup()
+            self._publish_state("PROCESSING")
             self.load_model()
 
             prompt = params.get("prompt", "")
