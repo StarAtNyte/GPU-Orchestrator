@@ -24,6 +24,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from shared.gpu_lock import GPUMemoryLock
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ class Qwen35ChatHandler:
         self.last_used = None
         self.cleanup_timer = None
         self._model_lock = threading.Lock()
+        self.gpu_lock = GPUMemoryLock(redis_client, worker_id) if redis_client else None
         # Callable(state: str) → None.  Called on every model-lifecycle event so
         # main.py can push the new state to etcd immediately.
         # States: "IDLE" | "WARM" | "PROCESSING"
@@ -161,70 +163,84 @@ class Qwen35ChatHandler:
                 logger.info("llama-server already running — reusing")
                 return
 
-            self._download_model()
-
-            vision_active = not DISABLE_VISION and os.path.exists(MMPROJ_PATH)
-            ctx = N_CTX_VISION if vision_active else N_CTX
-            ubatch = N_UBATCH_VISION if vision_active else N_UBATCH
-
-            cmd = [
-                "llama-server",
-                "--model",
-                MODEL_PATH,
-                "--ctx-size",
-                str(ctx),
-                "--n-gpu-layers",
-                str(N_GPU_LAYERS),
-                "--threads",
-                str(N_THREADS),
-                "--parallel",
-                "1",  # single slot — reduces KV/rs cache, prevents OOM
-                "--ubatch-size",
-                str(ubatch),  # micro-batch for compute buffer; smaller = less VRAM
-                "--flash-attn",
-                "on",  # halves KV cache VRAM, enables larger context
-                "--cache-type-k",
-                "q8_0",  # quantize KV cache for more headroom
-                "--cache-type-v",
-                "q8_0",
-                "--port",
-                str(SERVER_PORT),
-                "--host",
-                "127.0.0.1",
-            ]
-            if vision_active:
-                cmd += ["--mmproj", MMPROJ_PATH]
-                logger.info("Vision projector attached")
-            elif DISABLE_VISION:
-                logger.info("Vision projector disabled (DISABLE_VISION=true)")
-
-            logger.info(
-                f"Starting llama-server | {MODEL_FILE} "
-                f"| ctx={ctx} | ubatch={ubatch} | gpu_layers={N_GPU_LAYERS} "
-                f"| vision={'on' if vision_active else 'off'} | port={SERVER_PORT}"
-            )
-            self.server_proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-            )
-
-            deadline = time.time() + 300
-            while time.time() < deadline:
-                if self.server_proc.poll() is not None:
-                    out = self.server_proc.stdout.read().decode(errors="replace")
-                    raise RuntimeError(f"llama-server exited:\n{out[-2000:]}")
+            if self.gpu_lock:
+                logger.info("[GPU_LOCK] Acquiring lock before loading llama-server...")
                 try:
-                    if (
-                        requests.get(f"{SERVER_URL}/health", timeout=2).status_code
-                        == 200
-                    ):
-                        logger.info("llama-server ready")
-                        return
-                except requests.exceptions.ConnectionError:
-                    pass
-                time.sleep(1)
+                    with self.gpu_lock.locked(timeout=1800, required_memory_mb=22000):
+                        self._load_model_internal()
+                except TimeoutError as e:
+                    logger.error(f"[GPU_LOCK] Failed to acquire lock: {e}")
+                    raise
+                return
 
-            self.server_proc.kill()
-            raise RuntimeError("llama-server did not become ready within 5 minutes")
+            self._load_model_internal()
+
+    def _load_model_internal(self):
+        """Internal: download and start llama-server (call with gpu_lock held)."""
+        self._download_model()
+
+        vision_active = not DISABLE_VISION and os.path.exists(MMPROJ_PATH)
+        ctx = N_CTX_VISION if vision_active else N_CTX
+        ubatch = N_UBATCH_VISION if vision_active else N_UBATCH
+
+        cmd = [
+            "llama-server",
+            "--model",
+            MODEL_PATH,
+            "--ctx-size",
+            str(ctx),
+            "--n-gpu-layers",
+            str(N_GPU_LAYERS),
+            "--threads",
+            str(N_THREADS),
+            "--parallel",
+            "1",  # single slot — reduces KV/rs cache, prevents OOM
+            "--ubatch-size",
+            str(ubatch),  # micro-batch for compute buffer; smaller = less VRAM
+            "--flash-attn",
+            "on",  # halves KV cache VRAM, enables larger context
+            "--cache-type-k",
+            "q8_0",  # quantize KV cache for more headroom
+            "--cache-type-v",
+            "q8_0",
+            "--port",
+            str(SERVER_PORT),
+            "--host",
+            "127.0.0.1",
+        ]
+        if vision_active:
+            cmd += ["--mmproj", MMPROJ_PATH]
+            logger.info("Vision projector attached")
+        elif DISABLE_VISION:
+            logger.info("Vision projector disabled (DISABLE_VISION=true)")
+
+        logger.info(
+            f"Starting llama-server | {MODEL_FILE} "
+            f"| ctx={ctx} | ubatch={ubatch} | gpu_layers={N_GPU_LAYERS} "
+            f"| vision={'on' if vision_active else 'off'} | port={SERVER_PORT}"
+        )
+        self.server_proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            if self.server_proc.poll() is not None:
+                out = self.server_proc.stdout.read().decode(errors="replace")
+                raise RuntimeError(f"llama-server exited:\n{out[-2000:]}")
+            try:
+                if (
+                    requests.get(f"{SERVER_URL}/health", timeout=2).status_code
+                    == 200
+                ):
+                    logger.info("llama-server ready")
+                    return
+            except requests.exceptions.ConnectionError:
+                pass
+            time.sleep(1)
+
+        self.server_proc.kill()
+        raise RuntimeError("llama-server did not become ready within 5 minutes")
 
     def offload_model(self):
         """Terminate llama-server to free GPU VRAM for other workers (WARM → IDLE)."""

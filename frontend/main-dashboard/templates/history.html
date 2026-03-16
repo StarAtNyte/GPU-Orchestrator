@@ -345,6 +345,9 @@
                 if (params.length) url += '?' + params.join('&');
 
                 const response = await fetch(url, { headers: getAuthHeaders() });
+                if (!response.ok) {
+                    throw new Error(response.status === 401 ? 'Not logged in' : `Server error ${response.status}`);
+                }
                 const data = await response.json();
 
                 document.getElementById('jobCount').textContent = data.count;

@@ -26,6 +26,8 @@ class ZImageUI {
         this.newBtn = document.getElementById('newBtn');
         this.statusBadge = document.getElementById('statusBadge');
         this.statusText = document.getElementById('statusText');
+        this.gpuStatusIndicator = document.getElementById('gpuStatusIndicator');
+        this.gpuStatusText = document.getElementById('gpuStatusText');
         this.logoHome = document.getElementById('logoHome');
 
 
@@ -166,6 +168,8 @@ class ZImageUI {
         // Check health
         this.checkHealth();
         setInterval(() => this.checkHealth(), 5000);
+        this.checkGPUHealth();
+        setInterval(() => this.checkGPUHealth(), 3000);
     }
 
     async checkHealth() {
@@ -182,6 +186,42 @@ class ZImageUI {
         } catch (error) {
             this.statusBadge.classList.add('disconnected');
             this.statusText.textContent = 'Disconnected • Check Orchestrator';
+        }
+    }
+
+    async checkGPUHealth() {
+        try {
+            const response = await fetch('api/gpu/health');
+            const data = await response.json();
+            if (data.status === 'ok') {
+                const jobs = data.active_jobs || 0;
+                const utilization = parseFloat(data.utilization_pct) || 0;
+                if (data.is_available) {
+                    this.gpuStatusIndicator.style.background = '#10B981';
+                    this.gpuStatusIndicator.style.animation = 'none';
+                    this.gpuStatusText.textContent = `GPU Ready • ${data.free_vram_gb}GB free`;
+                } else if (jobs > 0) {
+                    this.gpuStatusIndicator.style.background = '#F97316';
+                    this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
+                    this.gpuStatusText.textContent = `GPU Busy • ${jobs} job${jobs !== 1 ? 's' : ''} processing`;
+                } else if (utilization > 30) {
+                    this.gpuStatusIndicator.style.background = '#FBBF24';
+                    this.gpuStatusIndicator.style.animation = 'none';
+                    this.gpuStatusText.textContent = `GPU Reserved • ${utilization.toFixed(1)}% utilized`;
+                } else {
+                    this.gpuStatusIndicator.style.background = '#10B981';
+                    this.gpuStatusIndicator.style.animation = 'none';
+                    this.gpuStatusText.textContent = `GPU Idle • ${data.free_vram_gb}GB free`;
+                }
+            } else {
+                this.gpuStatusIndicator.style.background = '#FBBF24';
+                this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
+                this.gpuStatusText.textContent = 'GPU Status Unknown';
+            }
+        } catch (error) {
+            this.gpuStatusIndicator.style.background = '#FBBF24';
+            this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
+            this.gpuStatusText.textContent = 'GPU Status Unknown';
         }
     }
 

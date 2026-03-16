@@ -894,6 +894,10 @@
       </div>
     </div>
     <div class="header-actions">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);">
+        <span id="gpuStatusIndicator" style="width:8px;height:8px;border-radius:50%;background:#FBBF24;animation:pulse 2s infinite;flex-shrink:0;"></span>
+        <span id="gpuStatusText" style="white-space:nowrap;">Checking GPU...</span>
+      </div>
       <div class="status-dot" id="statusDot" title="Orchestrator status"></div>
       <span id="modelStatusBadge" class="model-status-badge loading">Loading model…</span>
       <button class="btn" id="settingsToggle" onclick="toggleSettings()">
@@ -2068,8 +2072,38 @@ async function checkStatus() {
     dot.title = data.orchestrator === 'connected' ? 'Orchestrator online' : 'Orchestrator offline';
   } catch { /* ignore */ }
 }
+async function checkGPUHealth() {
+  const ind = document.getElementById('gpuStatusIndicator');
+  const txt = document.getElementById('gpuStatusText');
+  try {
+    const res  = await fetch('api/gpu/health');
+    const data = await res.json();
+    if (data.status === 'ok') {
+      const jobs = data.active_jobs || 0;
+      const util = parseFloat(data.utilization_pct) || 0;
+      if (data.is_available) {
+        ind.style.background = '#10B981'; ind.style.animation = 'none';
+        txt.textContent = `GPU Ready \u2022 ${data.free_vram_gb}GB free`;
+      } else if (jobs > 0) {
+        ind.style.background = '#F97316'; ind.style.animation = 'pulse 2s infinite';
+        txt.textContent = `GPU Busy \u2022 ${jobs} job${jobs !== 1 ? 's' : ''} processing`;
+      } else if (util > 30) {
+        ind.style.background = '#FBBF24'; ind.style.animation = 'none';
+        txt.textContent = `GPU Reserved \u2022 ${util.toFixed(1)}% utilized`;
+      } else {
+        ind.style.background = '#10B981'; ind.style.animation = 'none';
+        txt.textContent = `GPU Idle \u2022 ${data.free_vram_gb}GB free`;
+      }
+    } else {
+      ind.style.background = '#FBBF24'; ind.style.animation = 'pulse 2s infinite';
+      txt.textContent = 'GPU Status Unknown';
+    }
+  } catch { ind.style.background = '#FBBF24'; txt.textContent = 'GPU Status Unknown'; }
+}
 checkStatus();
 setInterval(checkStatus, 30000);
+checkGPUHealth();
+setInterval(checkGPUHealth, 3000);
 
 initModelWarmup();
 

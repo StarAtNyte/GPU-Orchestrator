@@ -386,6 +386,19 @@ func parseEtcdStatus(value string) string {
 	return ""
 }
 
+// parseEtcdJobID extracts the "job_id" field from a worker's etcd value.
+// Workers publish job_id when they transition to PROCESSING state.
+// Format: "app=foo,queue=jobs:bar,status=PROCESSING,job_id=<uuid>"
+func parseEtcdJobID(value string) string {
+	for _, part := range strings.Split(value, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) == 2 && kv[0] == "job_id" {
+			return kv[1]
+		}
+	}
+	return ""
+}
+
 // watchWorkers monitors etcd for worker registration and heartbeats
 func watchWorkers() {
 	log.Println("[INFO] Watching for workers in etcd...")
@@ -402,7 +415,7 @@ func watchWorkers() {
 
 			if existing := workers[workerID]; existing != nil {
 				existing.LastHeartbeat = time.Now()
-				applyEtcdStateToWorker(existing, publishedStatus, false)
+				applyEtcdStateToWorker(existing, publishedStatus, parseEtcdJobID(string(kv.Value)), false)
 				log.Printf("[INFO] Loaded existing worker: %s (state: %s)", workerID, existing.State)
 			} else {
 				initialState := etcdStatusToWorkerState(publishedStatus)
@@ -436,7 +449,7 @@ func watchWorkers() {
 				if existing := workers[workerID]; existing != nil {
 					existing.LastHeartbeat = time.Now()
 					prevState := existing.State
-					applyEtcdStateToWorker(existing, publishedStatus, true)
+					applyEtcdStateToWorker(existing, publishedStatus, parseEtcdJobID(string(event.Kv.Value)), true)
 					if existing.State != prevState {
 						log.Printf("[ETCD] Worker %s: %s → %s (via etcd publish)",
 							workerID, prevState, existing.State)
@@ -499,20 +512,23 @@ func etcdStatusToWorkerState(status string) WorkerState {
 // the worker published to etcd. When guardProcessing is true (live watch events)
 // we never downgrade a PROCESSING worker based solely on an etcd heartbeat — the
 // job-completion monitor is authoritative for the PROCESSING → WARM transition.
-func applyEtcdStateToWorker(w *WorkerInfo, publishedStatus string, guardProcessing bool) {
+func applyEtcdStateToWorker(w *WorkerInfo, publishedStatus, jobID string, guardProcessing bool) {
 	switch publishedStatus {
 	case "WARM":
 		// Always trust the worker's WARM publication — the worker only publishes
-		// WARM after a job completes. CurrentJobID is not set for external workers
-		// so we cannot rely on monitorJobCompletions for the PROCESSING→WARM transition.
+		// WARM after a job completes.
 		w.State = WorkerStateWarm
 		w.LastActivityTime = time.Now()
 		w.CurrentJobID = ""
 	case "IDLE":
 		w.State = WorkerStateIdle
 		w.LastActivityTime = time.Now()
+		w.CurrentJobID = ""
 	case "PROCESSING":
 		w.State = WorkerStateProcessing
+		if jobID != "" {
+			w.CurrentJobID = jobID
+		}
 	default:
 		// "ONLINE" or legacy heartbeat — only advance STARTING → READY
 		if w.State == WorkerStateStarting {
@@ -1136,7 +1152,27 @@ func monitorStreams() {
 
 			// Check if worker exists and is healthy
 			worker := GetWorkerForApp(appID)
-			if worker == nil || worker.State == WorkerStateAbsent {
+			if worker != nil && (worker.State == WorkerStateIdle || worker.State == WorkerStateProcessing) {
+				// Worker is running but waiting for GPU. If a WARM worker from another
+				// app is holding VRAM, preempt it immediately so this worker can load.
+				warmWorkerID := getWarmWorkerForOtherApp(appID)
+				if warmWorkerID != "" {
+					log.Printf("[STREAM MONITOR] Preempting WARM worker %s to free GPU for %s worker (app %s, pending: %d)",
+						warmWorkerID, worker.State, appID, length)
+					go func(wid string) {
+						if err := PreemptWorkerGPU(wid); err != nil {
+							log.Printf("[STREAM MONITOR] GPU preemption failed for %s: %v", wid, err)
+						}
+					}(warmWorkerID)
+				}
+				// Also stop IDLE workers from other apps — even idle containers hold a
+				// CUDA context (~490 MB each) which can push active inference into OOM.
+				idleWorkerID := getIdleWorkerForOtherApp(appID)
+				if idleWorkerID != "" {
+					log.Printf("[STREAM MONITOR] Stopping idle worker %s to free CUDA context for app %s", idleWorkerID, appID)
+					go StopWorker(idleWorkerID)
+				}
+			} else if worker == nil || worker.State == WorkerStateAbsent {
 				// Try to start worker
 				isAvailable, err := IsGPUAvailable()
 				if err != nil {

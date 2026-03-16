@@ -222,7 +222,11 @@ async def get_user_jobs(request: Request, app_id: Optional[str] = None, status: 
         if response.status_code == 200:
             return response.json()
         else:
-            return JSONResponse(content=response.json(), status_code=response.status_code)
+            try:
+                content = response.json()
+            except Exception:
+                content = {"error": response.text.strip()}
+            return JSONResponse(content=content, status_code=response.status_code)
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
 

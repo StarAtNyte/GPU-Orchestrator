@@ -71,6 +71,7 @@ _etcd_client = None
 _etcd_key = None
 _etcd_lease = None
 _current_state = "IDLE"  # IDLE | WARM | PROCESSING
+_current_job_id = ""     # set when PROCESSING, cleared otherwise
 _etcd_state_lock = threading.Lock()
 
 # Global handler instance (set in main())
@@ -80,7 +81,9 @@ handler: Qwen35ChatHandler = None
 # ── state publishing ──────────────────────────────────────────────────────────
 
 
-def _build_etcd_value(state: str) -> str:
+def _build_etcd_value(state: str, job_id: str = "") -> str:
+    if state == "PROCESSING" and job_id:
+        return f"app={APP_ID},queue={QUEUE},status={state},job_id={job_id}"
     return f"app={APP_ID},queue={QUEUE},status={state}"
 
 
@@ -92,12 +95,14 @@ def publish_state(state: str) -> None:
     job start, job finish) and by the heartbeat loop every few seconds so
     the orchestrator always has a live, accurate view of this worker.
     """
-    global _current_state
+    global _current_state, _current_job_id
     with _etcd_state_lock:
         _current_state = state
+        if state != "PROCESSING":
+            _current_job_id = ""
         try:
             if _etcd_client and _etcd_key and _etcd_lease:
-                _etcd_client.put(_etcd_key, _build_etcd_value(state), lease=_etcd_lease)
+                _etcd_client.put(_etcd_key, _build_etcd_value(state, _current_job_id), lease=_etcd_lease)
                 logger.info(f"[STATE] → {state}")
         except Exception as exc:
             logger.warning(f"[STATE] Failed to publish state={state}: {exc}")
@@ -136,7 +141,8 @@ def start_heartbeat(lease) -> None:
                     lease.refresh()
                     with _etcd_state_lock:
                         state = _current_state
-                    _etcd_client.put(_etcd_key, _build_etcd_value(state), lease=lease)
+                        job_id = _current_job_id
+                    _etcd_client.put(_etcd_key, _build_etcd_value(state, job_id), lease=lease)
             except Exception as exc:
                 logger.error(f"[ETCD] Heartbeat error: {exc}")
             time.sleep(3)
@@ -270,6 +276,8 @@ def process_job(payload, r):
         return
 
     mark_active(r)
+    global _current_job_id
+    _current_job_id = job.job_id
     update_job_status(job.job_id, "PROCESSING")
 
     try:

@@ -78,6 +78,18 @@ async def health():
     }
 
 
+@app.get("/api/gpu/health")
+async def gpu_health():
+    """Check GPU health status from orchestrator."""
+    try:
+        response = requests.get(f"{ORCHESTRATOR_URL}/health/gpu", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        return {"status": "error", "is_available": False, "error": "Cannot reach orchestrator"}
+    except requests.exceptions.RequestException as e:
+        return {"status": "error", "is_available": False, "error": str(e)}
+
+
 @app.post("/api/chat")
 async def submit_chat(chat_request: ChatRequest, request: Request):
     """Submit a chat job to the orchestrator. Returns job_id immediately."""

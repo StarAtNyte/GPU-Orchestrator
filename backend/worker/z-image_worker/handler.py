@@ -7,8 +7,12 @@ from typing import Dict, Any
 import re
 import os
 import gc
+import sys
 import time
 import threading
+
+sys.path.append('/app')
+from shared.gpu_lock import GPUMemoryLock
 
 # Set CUDA memory allocation configuration
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -16,13 +20,14 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 logger = logging.getLogger(__name__)
 
 class ZImageHandler:
-    def __init__(self, state_callback=None):
+    def __init__(self, redis_client=None, worker_id="z-image-worker", state_callback=None):
         self._state_cb = state_callback
         self.pipe = None
         self.device = "cuda"
         self.last_used = None
         self.cleanup_timer = None
         self.cleanup_delay = 300  # 5 minutes in seconds
+        self.gpu_lock = GPUMemoryLock(redis_client, worker_id) if redis_client else None
 
     def _publish_state(self, state: str) -> None:
         """Fire the state callback if one was provided (safe to call from any thread)."""
@@ -47,6 +52,19 @@ class ZImageHandler:
                 return self.load_model()
             return
 
+        if self.gpu_lock:
+            logger.info("[GPU_LOCK] Acquiring lock before loading model...")
+            try:
+                with self.gpu_lock.locked(timeout=1800, required_memory_mb=16000):
+                    self._load_model_internal()
+            except TimeoutError as e:
+                logger.error(f"[GPU_LOCK] Failed to acquire lock: {e}")
+                raise
+            return
+
+        self._load_model_internal()
+
+    def _load_model_internal(self):
         logger.info("Loading Z-Image Turbo model to GPU...")
 
         self.pipe = ZImagePipeline.from_pretrained(

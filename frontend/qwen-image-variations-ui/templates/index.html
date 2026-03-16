@@ -262,6 +262,10 @@
                 <a href="/gpu-polling/history" target="_blank" style="color: var(--gray-600); text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 16px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: white; transition: all 0.2s;">
                     View History
                 </a>
+                <div id="gpuStatusBadge" class="status-badge" style="display: flex; align-items: center; gap: 8px;">
+                    <span id="gpuStatusIndicator" style="width: 8px; height: 8px; border-radius: 50%; background: #FBBF24; animation: pulse 2s infinite;"></span>
+                    <span id="gpuStatusText">Checking GPU...</span>
+                </div>
                 <div id="statusBadge" class="status-badge status-offline">
                     <span id="statusText">Connecting...</span>
                 </div>
@@ -502,8 +506,38 @@
             }
         }
 
+        const gpuIndicator = document.getElementById('gpuStatusIndicator');
+        const gpuText = document.getElementById('gpuStatusText');
+        async function checkGPUHealth() {
+            try {
+                const response = await fetch('api/gpu/health');
+                const data = await response.json();
+                if (data.status === 'ok') {
+                    const jobs = data.active_jobs || 0;
+                    const utilization = parseFloat(data.utilization_pct) || 0;
+                    if (data.is_available) {
+                        gpuIndicator.style.background = '#10B981'; gpuIndicator.style.animation = 'none';
+                        gpuText.textContent = `GPU Ready \u2022 ${data.free_vram_gb}GB free`;
+                    } else if (jobs > 0) {
+                        gpuIndicator.style.background = '#F97316'; gpuIndicator.style.animation = 'pulse 2s infinite';
+                        gpuText.textContent = `GPU Busy \u2022 ${jobs} job${jobs !== 1 ? 's' : ''} processing`;
+                    } else if (utilization > 30) {
+                        gpuIndicator.style.background = '#FBBF24'; gpuIndicator.style.animation = 'none';
+                        gpuText.textContent = `GPU Reserved \u2022 ${utilization.toFixed(1)}% utilized`;
+                    } else {
+                        gpuIndicator.style.background = '#10B981'; gpuIndicator.style.animation = 'none';
+                        gpuText.textContent = `GPU Idle \u2022 ${data.free_vram_gb}GB free`;
+                    }
+                } else {
+                    gpuIndicator.style.background = '#FBBF24'; gpuIndicator.style.animation = 'pulse 2s infinite';
+                    gpuText.textContent = 'GPU Status Unknown';
+                }
+            } catch { gpuIndicator.style.background = '#FBBF24'; gpuText.textContent = 'GPU Status Unknown'; }
+        }
         checkHealth();
         setInterval(checkHealth, 10000);
+        checkGPUHealth();
+        setInterval(checkGPUHealth, 3000);
     </script>
     <script>window.AUTH_REDIRECT_URL = '/gpu-polling/';</script>
     <script src="static/js/auth.js"></script>
