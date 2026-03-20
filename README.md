@@ -152,7 +152,7 @@ HF_TOKEN=your_huggingface_token
 # Implement handler.py, add to config/apps.yaml and config/workers.yaml
 ```
 
-See [ADDING_NEW_APPS.md](ADDING_NEW_APPS.md) for the full guide.
+See [GPU Polling: Self-Managing GPU Orchestration.md](GPU Polling: Self-Managing GPU Orchestration.md) for the full guide.
 
 ## Troubleshooting
 
