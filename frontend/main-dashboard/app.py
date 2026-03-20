@@ -60,6 +60,15 @@ FRONTEND_SERVICES = {
         "description": "Chat with Qwen3.5-35B-A3B running locally on RTX 4090",
         "app_id": "qwen35-chat"
     },
+    "omnilottie": {
+        "name": "OmniLottie",
+        "url": "/gpu-polling/omnilottie/",
+        "container_name": "omnilottie-ui",
+        "port": 7868,
+        "icon": "🎬",
+        "description": "Convert text, images, or videos into Lottie animations",
+        "app_id": "omnilottie"
+    },
 }
 
 

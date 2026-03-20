@@ -198,37 +198,32 @@ class SDXLImageUI {
 
         async checkGPUHealth() {
         try {
-            const response = await fetch('api/gpu/health');
-            const data = await response.json();
+            const [gpuRes, workersRes] = await Promise.all([
+                fetch('api/gpu/health'),
+                fetch('api/workers')
+            ]);
+            const data = await gpuRes.json();
+            const workers = await workersRes.json();
             this.gpuStatus = data;
 
-            if (data.status === 'ok') {
-                const jobs = data.active_jobs || 0;
-                const utilization = parseFloat(data.utilization_pct) || 0;
+            const processing = (workers.workers || []).filter(w => w.State === 'PROCESSING' || w.State === 'STARTING');
 
-                if (data.is_available) {
-                    // GPU is free
-                    this.gpuStatusIndicator.style.background = '#10B981';
-                    this.gpuStatusIndicator.style.animation = 'none';
-                    this.gpuStatusText.textContent = `GPU Ready • ${data.free_vram_gb}GB free`;
-                } else if (jobs > 0) {
-                    // GPU is processing jobs
-                    this.gpuStatusIndicator.style.background = '#F97316';
-                    this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
-                    this.gpuStatusText.textContent = `GPU Busy • ${jobs} job${jobs !== 1 ? 's' : ''} processing`;
-                } else if (utilization > 30) {
-                    // High utilization, no active jobs - reserved for something
+            if (processing.length > 0) {
+                this.gpuStatusIndicator.style.background = '#F97316';
+                this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
+                this.gpuStatusText.textContent = `GPU Busy • ${processing[0].AppID}`;
+            } else if (data.status === 'ok') {
+                const utilization = parseFloat(data.utilization_pct) || 0;
+                if (utilization > 30) {
                     this.gpuStatusIndicator.style.background = '#FBBF24';
                     this.gpuStatusIndicator.style.animation = 'none';
                     this.gpuStatusText.textContent = `GPU Reserved • ${utilization.toFixed(1)}% utilized`;
                 } else {
-                    // Low background activity but no active jobs - idle
                     this.gpuStatusIndicator.style.background = '#10B981';
                     this.gpuStatusIndicator.style.animation = 'none';
-                    this.gpuStatusText.textContent = `GPU Idle • ${data.free_vram_gb}GB free`;
+                    this.gpuStatusText.textContent = `GPU Ready • ${data.free_vram_gb}GB free`;
                 }
             } else {
-                // Error checking GPU
                 this.gpuStatusIndicator.style.background = '#FBBF24';
                 this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
                 this.gpuStatusText.textContent = 'GPU Status Unknown';

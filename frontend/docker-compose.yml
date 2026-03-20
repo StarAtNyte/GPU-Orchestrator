@@ -145,6 +145,25 @@ services:
       retries: 3
       start_period: 10s
 
+  omnilottie-ui:
+    build:
+      context: ./omnilottie-ui
+      dockerfile: Dockerfile
+    container_name: omnilottie-ui
+    ports:
+      - "8868:7868"
+    environment:
+      - ORCHESTRATOR_URL=http://172.17.0.1:8890
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7868/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 networks:
   frontend-network:
     driver: bridge

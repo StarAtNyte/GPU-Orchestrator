@@ -33,21 +33,23 @@ class GPUOrchestratorHub {
 
     async loadGPUStatus() {
         try {
-            const response = await this.fetchWithTimeout('api/gpu/health');
-            const data = await response.json();
+            const [gpuRes, workersRes] = await Promise.all([
+                this.fetchWithTimeout('api/gpu/health'),
+                this.fetchWithTimeout('api/workers')
+            ]);
+            const data = await gpuRes.json();
+            const workers = await workersRes.json();
 
-            if (data.status === 'ok') {
-                const jobs = data.active_jobs || 0;
+            const processing = (workers.workers || []).filter(w => w.State === 'PROCESSING' || w.State === 'STARTING');
+
+            if (processing.length > 0) {
+                this.setStatus('orange', `Busy — ${processing[0].AppID}`);
+            } else if (data.status === 'ok') {
                 const utilization = parseFloat(data.utilization_pct) || 0;
-
-                if (data.is_available) {
-                    this.setStatus('emerald', 'All systems operational');
-                } else if (jobs > 0) {
-                    this.setStatus('orange', `Busy — ${jobs} active job${jobs !== 1 ? 's' : ''}`);
-                } else if (utilization > 30) {
+                if (utilization > 30) {
                     this.setStatus('yellow', 'Reserved');
                 } else {
-                    this.setStatus('emerald', 'Idle');
+                    this.setStatus('emerald', 'All systems operational');
                 }
             } else {
                 this.setStatus('red', 'Offline');

@@ -2,21 +2,21 @@
 
 ## The Starting Point
 
-We wanted a server that could run GPU-powered AI apps — image generation with SDXL, fast turbo generation with Z-Image, image editing with Qwen — all accessible through simple web UIs. Something our team could just open in a browser and use.
+I wanted a server that could run GPU-powered AI apps — image generation with SDXL, fast turbo generation with Z-Image, image editing with Qwen — all accessible through simple web UIs. Something I could just open in a browser and use.
 
 Sounds straightforward. Except for one problem.
 
 ## The Problem: One GPU, Many Models
 
-We had a single machine — an Ubuntu PC with one NVIDIA GPU (24GB VRAM). And these AI models are hungry:
+I had a single machine — an Ubuntu PC with one NVIDIA GPU (24GB VRAM). And these AI models are hungry:
 
 - **SDXL** needs ~12GB VRAM
 - **Z-Image Turbo** needs ~16GB VRAM
-- **Qwen Image Edit** needs ~12GB VRAM
+- **Qwen Image Edit** needs 22~GB VRAM
 
 You can't just load all of them at once. 24GB isn't enough. And even if you could, the GPU isn't always free — when one model is running inference, the GPU is maxed out. Other jobs just have to wait.
 
-So we couldn't treat this like a normal web server where you spin up all your services and let them run. We needed something smarter.
+So I couldn't treat this like a normal web server where you spin up all your services and let them run. I needed something smarter.
 
 ## The Solution: A Job Orchestrator with Dynamic Worker Switching
 
@@ -102,7 +102,7 @@ Each worker is a Python container that:
 5. Processes them, writes results to PostgreSQL
 6. Sends heartbeats to etcd
 
-We built a template system (`create_worker.sh`) so adding new workers is just:
+I built a template system (`create_worker.sh`) so adding new workers is just:
 ```bash
 ./create_worker.sh my-new-model
 # Edit handler.py with your model logic
@@ -115,7 +115,7 @@ We built a template system (`create_worker.sh`) so adding new workers is just:
 |-----------|-----------|-----|
 | Orchestrator | **Go** | Fast, handles concurrency well with goroutines, Docker SDK has first-class Go support |
 | Workers | **Python** | All ML libraries (diffusers, transformers) are Python |
-| Job Queue | **Redis Streams** | Persistent queues, consumer groups, exactly what we needed for job routing |
+| Job Queue | **Redis Streams** | Persistent queues, consumer groups, exactly what I needed for job routing |
 | Database | **PostgreSQL + TimescaleDB** | Job tracking, GPU metrics time-series, user history |
 | Service Discovery | **etcd** | Workers register themselves, orchestrator watches for changes |
 | Serialization | **Protobuf** | Compact binary format for job payloads over Redis |
@@ -140,22 +140,24 @@ The project evolved over about 3 weeks:
 
 ## Challenges
 
-**GPU memory management**: You can't just `docker stop` a container and expect VRAM to be freed instantly. Sometimes GPU processes linger. We added cleanup scripts and health checks via `nvidia-smi` to handle this.
+**GPU memory management**: You can't just `docker stop` a container and expect VRAM to be freed instantly. Sometimes GPU processes linger. I added cleanup scripts and health checks via `nvidia-smi` to handle this.
 
-**Worker startup time**: Loading a 16GB model into VRAM takes 30-60 seconds. During this time, the job is queued and the user is waiting. We show GPU status in real-time so users know something is happening.
+**Worker startup time**: Loading a 16GB model into VRAM takes 30-60 seconds. During this time, the job is queued and the user is waiting. I show GPU status in real-time so users know something is happening.
 
 **Worker crashes**: If a worker crashes mid-job, the job would be stuck in `PROCESSING` forever. The timeout monitor catches these — any job processing for more than 30 minutes gets marked as failed.
 
-**Single GPU contention**: When two users submit jobs for different models at the same time, one has to wait. The queue handles this, but we had to think carefully about the UX — showing queue position, estimated wait time, and clear status indicators.
+**Single GPU contention**: When two users submit jobs for different models at the same time, one has to wait. The queue handles this, but I had to think carefully about the UX — showing queue position, estimated wait time, and clear status indicators.
 
 ## What's Running
 
-Right now, the system supports 4 AI apps:
+Right now, the system supports 6 AI apps:
 
 1. **SDXL Image Generator** — Text-to-image with Stable Diffusion XL
 2. **Z-Image Turbo** — Fast image generation with Tongyi's single-stream diffusion transformer (supports Chinese & English prompts)
 3. **Qwen Image Edit** — Edit existing images with natural language instructions (4-bit quantized, ~14s inference)
 4. **Qwen Image Variations** — Generate random style variations of a person's photo
+5. **Qwen3.5 Chat** — Chat with Qwen3.5-35B-A3B (MoE, 22GB Q4) with streaming via Redis Streams
+6. **OmniLottie** — Convert text, images, or videos into Lottie animations using the OmniLottie AI model. The UI ships with a built-in example gallery: 38 text prompts, 26 reference images, and 30 demo videos that load directly into the generator.
 
 Plus a **Panorama Processor** configured for cloud deployment via Modal (for when the local GPU isn't enough).
 
@@ -170,6 +172,28 @@ The system is designed to be extensible. To add a new AI model:
 5. Optionally, create a frontend UI
 
 The orchestrator picks it up automatically — it reads the config on startup and knows how to route jobs and manage the worker container.
+
+### Case Study: Adding OmniLottie
+
+OmniLottie was a good test of the system's extensibility. It's a multimodal model (text + image + video → Lottie JSON) that already had its own standalone FastAPI app (`omnilottie/app.py`). To integrate it into GPU Polling, I:
+
+1. **Created the worker directory** at `backend/worker/omnilottie_worker/` with four files:
+   - `handler.py` — Extracted the model loading + inference logic from the original `app.py` into the standard handler pattern (`load_model`, `offload_model`, `process`, cleanup timer)
+   - `main.py` — Standard worker main loop (copied from z-image, changed the stream key, group name, and handler import)
+   - `Dockerfile` — Based on the standard template, but adds `ffmpeg` (for video processing) and copies the `omnilottie/` model code into the container
+   - `requirements.txt` — Core worker deps (redis, protobuf, etcd3, psycopg2) + model-specific deps (torch, transformers, decord, qwen-vl-utils)
+
+2. **Registered it in configs:**
+   - `config/apps.yaml` — Added the app definition with its parameters (task_type, prompt, image_base64, video_base64, sampling params)
+   - `config/workers.yaml` — Added resource requirements (12GB VRAM, 90s startup)
+
+3. **Added docker-compose service** — Standard worker service entry with `MODEL_PATH` env var pointing to the model weights volume
+
+The key insight: the original app had the model logic *and* the web UI in one file. For GPU Polling, I only need the model logic — the orchestrator handles job routing, and any frontend just talks to the orchestrator's HTTP API. The handler's `process()` method takes job params (with base64-encoded media), runs inference, and returns the Lottie JSON. That's the entire interface.
+
+The frontend UI was redesigned to match the original standalone app's look: gradient header, segmented tab controls, panel-based layout with a live Lottie preview, JSON inspector, and a stats bar showing token count, layer count, and generation time. The example gallery (38 text prompts, 26 reference images, 30 demo videos) was copied from the original repo into `static/example/` and served via an `/examples` endpoint — clicking any example loads it directly into the generator.
+
+**Total time to integrate**: About 30 minutes, most of which was adapting the handler class. The main.py was a near-verbatim copy.
 
 ## Takeaways
 

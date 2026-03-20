@@ -171,6 +171,57 @@ apps:
         required: false
         description: "CFG scale (default: 1.0)"
 
+  - id: "omnilottie"
+    name: "OmniLottie"
+    type: "local"
+    queue: "jobs:omnilottie"
+    description: "Convert text, images, or videos into Lottie animations using OmniLottie AI model"
+    gpu_vram_gb: 12
+    docker_image: "backend-omnilottie-worker:latest"
+    container_name: "omnilottie-worker"
+    idle_timeout_seconds: 300
+    startup_timeout_seconds: 180
+    environment:
+      HF_HOME: "/models"
+      TRANSFORMERS_CACHE: "/models"
+    parameters:
+      - name: "task_type"
+        type: "string"
+        required: true
+        description: "Generation mode: 'text', 'image', or 'video'"
+      - name: "prompt"
+        type: "string"
+        required: false
+        description: "Text prompt or animation description"
+      - name: "image_base64"
+        type: "string"
+        required: false
+        description: "Base64 encoded input image (for image mode)"
+      - name: "video_base64"
+        type: "string"
+        required: false
+        description: "Base64 encoded input video (for video mode)"
+      - name: "max_tokens"
+        type: "string"
+        required: false
+        description: "Maximum tokens to generate (default: 5556)"
+      - name: "use_sampling"
+        type: "string"
+        required: false
+        description: "Enable sampling: 'true' or 'false' (default: true)"
+      - name: "temperature"
+        type: "string"
+        required: false
+        description: "Sampling temperature (default: 0.9)"
+      - name: "top_p"
+        type: "string"
+        required: false
+        description: "Top-P nucleus sampling (default: 0.25)"
+      - name: "top_k"
+        type: "string"
+        required: false
+        description: "Top-K sampling (default: 5)"
+
   # Cloud/Modal Apps
   - id: "panorama-processor"
     name: "360° Panorama Processor"

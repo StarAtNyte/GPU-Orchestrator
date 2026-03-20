@@ -28,6 +28,13 @@ workers:
     startup_time_seconds: 60
     shutdown_time_seconds: 10
 
+  omnilottie-worker:
+    app_id: "omnilottie"
+    queue: "jobs:omnilottie"
+    vram_required_gb: 12
+    startup_time_seconds: 90
+    shutdown_time_seconds: 10
+
   qwen-image-variations-worker:
     app_id: "qwen-image-variations"
     queue: "jobs:qwen-image-variations"

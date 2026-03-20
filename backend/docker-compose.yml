@@ -278,6 +278,46 @@ services:
       - backend-network
     restart: unless-stopped
 
+  omnilottie-worker:
+    build:
+      context: .
+      dockerfile: worker/omnilottie_worker/Dockerfile
+    container_name: omnilottie-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_HOST: etcd
+      ETCD_PORT: 2379
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: omnilottie-worker
+      APP_ID: omnilottie
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /models
+      TRANSFORMERS_CACHE: /models
+      MODEL_PATH: /models/omnilottie/pytorch_model.bin
+    volumes:
+      - ${HOME}/models/omnilottie:/models/omnilottie
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - backend-network
+    restart: unless-stopped
+
   qwen35-chat-worker:
     build:
       context: .

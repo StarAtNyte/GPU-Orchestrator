@@ -191,27 +191,29 @@ class ZImageUI {
 
     async checkGPUHealth() {
         try {
-            const response = await fetch('api/gpu/health');
-            const data = await response.json();
-            if (data.status === 'ok') {
-                const jobs = data.active_jobs || 0;
+            const [gpuRes, workersRes] = await Promise.all([
+                fetch('api/gpu/health'),
+                fetch('api/workers')
+            ]);
+            const data = await gpuRes.json();
+            const workers = await workersRes.json();
+
+            const processing = (workers.workers || []).filter(w => w.State === 'PROCESSING' || w.State === 'STARTING');
+
+            if (processing.length > 0) {
+                this.gpuStatusIndicator.style.background = '#F97316';
+                this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
+                this.gpuStatusText.textContent = `GPU Busy • ${processing[0].AppID}`;
+            } else if (data.status === 'ok') {
                 const utilization = parseFloat(data.utilization_pct) || 0;
-                if (data.is_available) {
-                    this.gpuStatusIndicator.style.background = '#10B981';
-                    this.gpuStatusIndicator.style.animation = 'none';
-                    this.gpuStatusText.textContent = `GPU Ready • ${data.free_vram_gb}GB free`;
-                } else if (jobs > 0) {
-                    this.gpuStatusIndicator.style.background = '#F97316';
-                    this.gpuStatusIndicator.style.animation = 'pulse 2s infinite';
-                    this.gpuStatusText.textContent = `GPU Busy • ${jobs} job${jobs !== 1 ? 's' : ''} processing`;
-                } else if (utilization > 30) {
+                if (utilization > 30) {
                     this.gpuStatusIndicator.style.background = '#FBBF24';
                     this.gpuStatusIndicator.style.animation = 'none';
                     this.gpuStatusText.textContent = `GPU Reserved • ${utilization.toFixed(1)}% utilized`;
                 } else {
                     this.gpuStatusIndicator.style.background = '#10B981';
                     this.gpuStatusIndicator.style.animation = 'none';
-                    this.gpuStatusText.textContent = `GPU Idle • ${data.free_vram_gb}GB free`;
+                    this.gpuStatusText.textContent = `GPU Ready • ${data.free_vram_gb}GB free`;
                 }
             } else {
                 this.gpuStatusIndicator.style.background = '#FBBF24';
