@@ -1,6 +1,6 @@
-# GPU-Polling
+# GPU Polling
 
-A distributed GPU orchestration system for managing job submission and execution across GPU workers. The system uses a separated architecture with a backend running on an Ubuntu GPU PC and a frontend for user interfaces.
+A self-managing GPU orchestration system for running multiple AI models on a single GPU. The orchestrator dynamically starts and stops worker containers as jobs come in, ensuring only one model occupies the GPU at a time.
 
 ## Architecture
 
@@ -11,32 +11,51 @@ A distributed GPU orchestration system for managing job submission and execution
 │  ┌──────────┐  ┌───────┐  ┌──────┐                                 │
 │  │PostgreSQL│  │ Redis │  │ etcd │   Infrastructure                │
 │  └────┬─────┘  └───┬───┘  └──┬───┘                                 │
-│       └────────────┼────────┘                                       │
+│       └────────────┼─────────┘                                      │
 │                    ▼                                                │
 │            ┌──────────────┐                                         │
 │            │ Orchestrator │  Job routing & GPU management           │
 │            └──────┬───────┘                                         │
 │                   │                                                 │
-│     ┌─────────────┼─────────────┐                                   │
-│     ▼             ▼             ▼                                   │
-│ ┌────────┐  ┌──────────┐  ┌────────────┐                           │
-│ │  SDXL  │  │ Z-Image  │  │   Qwen     │   GPU Workers              │
-│ │ Worker │  │  Worker  │  │   Worker   │                           │
-│ └────────┘  └──────────┘  └────────────┘                           │
+│     ┌─────────────┼──────────────────────┐                          │
+│     ▼             ▼          ▼           ▼                          │
+│ ┌──────┐  ┌─────────┐  ┌────────┐  ┌──────────┐  ┌────────────┐   │
+│ │ SDXL │  │ Z-Image │  │  Qwen  │  │ Qwen3.5  │  │ OmniLottie │   │
+│ └──────┘  └─────────┘  └────────┘  │   Chat   │  │   Worker   │   │
+│                                     └──────────┘  └────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
                               │
-                              │ HTTP (port 9090)
+                              │ HTTP (port 8890)
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│ FRONTEND (Linux/Windows Server)                                     │
+│ FRONTEND (Any server)                                               │
 │                                                                     │
-│  ┌────────────┐  ┌─────────┐  ┌──────────┐  ┌────────┐  ┌───────┐  │
-│  │    Main    │  │  SDXL   │  │ Z-Image  │  │  Qwen  │  │ Admin │  │
-│  │ Dashboard  │  │   UI    │  │    UI    │  │   UI   │  │  UI   │  │
-│  │   :8080    │  │  :7861  │  │  :7862   │  │ :7863  │  │ :8000 │  │
-│  └────────────┘  └─────────┘  └──────────┘  └────────┘  └───────┘  │
+│  ┌───────────┐ ┌───────┐ ┌─────────┐ ┌──────────┐ ┌───────────┐   │
+│  │  Main     │ │ SDXL  │ │ Z-Image │ │  Qwen    │ │  Qwen3.5  │   │
+│  │ Dashboard │ │  UI   │ │   UI    │ │  Edit UI │ │  Chat UI  │   │
+│  │  :8810    │ │ :8861 │ │  :8862  │ │  :8865   │ │   :8867   │   │
+│  └───────────┘ └───────┘ └─────────┘ └──────────┘ └───────────┘   │
+│                                                                     │
+│  ┌──────────────┐ ┌────────────────┐ ┌───────────────┐             │
+│  │ Qwen Variat. │ │   OmniLottie   │ │     Admin     │             │
+│  │    :8866     │ │     :8868      │ │     :8811     │             │
+│  └──────────────┘ └────────────────┘ └───────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+## Services
+
+| Service | Host Port | Description |
+|---------|-----------|-------------|
+| Orchestrator | 8890 | Job routing, worker management |
+| Main Dashboard | 8810 | Service hub |
+| Admin Dashboard | 8811 | System monitoring |
+| SDXL UI | 8861 | Stable Diffusion XL image generation |
+| Z-Image UI | 8862 | Z-Image Turbo generation |
+| Qwen Image Edit UI | 8865 | Edit images with natural language |
+| Qwen Image Variations UI | 8866 | Random style variations |
+| Qwen3.5 Chat UI | 8867 | Streaming chat (35B MoE model) |
+| OmniLottie UI | 8868 | Text/image/video → Lottie animations |
 
 ## Quick Start
 
@@ -46,223 +65,107 @@ A distributed GPU orchestration system for managing job submission and execution
 - NVIDIA GPU with drivers installed
 - NVIDIA Container Toolkit
 
-### 1. Start the Backend (Ubuntu GPU PC)
+### 1. Start the Backend
 
 ```bash
 cd backend
-
-# Copy and configure environment
 cp ../.env.example .env
-# Edit .env with your settings (POSTGRES_PASSWORD, HF_TOKEN, etc.)
+# Edit .env — set POSTGRES_PASSWORD, JWT_SECRET, HF_TOKEN
 
-# Start all services
-docker-compose up -d
-
-# Verify services are running
-docker-compose ps
+docker compose up -d
+docker compose ps
 ```
 
-### 2. Start the Frontend (Linux/Windows Server)
+### 2. Start the Frontend
 
 ```bash
 cd frontend
+# Edit docker-compose.yml — set ORCHESTRATOR_URL to your backend IP
+# Example: http://172.17.0.1:8890
 
-# Edit docker-compose.yml to set ORCHESTRATOR_URL to your backend IP
-# Example: http://192.168.50.28:9090
-
-# Start all UI services
-docker-compose up -d
-
-# Verify services are running
-docker-compose ps
+docker compose up -d
+docker compose ps
 ```
 
-### 3. Access the Application
+### 3. Access
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| Main Dashboard | http://localhost:8080 | Service hub & discovery |
-| SDXL UI | http://localhost:7861 | SDXL image generation |
-| Z-Image UI | http://localhost:7862 | Z-Image Turbo generation |
-| Qwen UI | http://localhost:7863 | Qwen vision-language model |
-| Admin Dashboard | http://localhost:8000 | System monitoring |
-
-## Docker Commands
-
-### Start Services
-
-```bash
-# Start all backend services
-cd backend && docker-compose up -d
-
-# Start all frontend services
-cd frontend && docker-compose up -d
-
-# Start specific service
-docker-compose up -d <service-name>
-```
-
-### Stop Services
-
-```bash
-# Stop all services (keeps containers)
-docker-compose stop
-
-# Stop and remove containers
-docker-compose down
-
-# Stop and remove containers + volumes (WARNING: deletes data)
-docker-compose down -v
-```
-
-### Restart Services
-
-```bash
-# Restart all services
-docker-compose restart
-
-# Restart specific service
-docker-compose restart <service-name>
-
-# Full restart (rebuild if needed)
-docker-compose down && docker-compose up -d
-
-# Restart with rebuild (after code changes)
-docker-compose up -d --build
-```
-
-### View Logs
-
-```bash
-# View all logs
-docker-compose logs
-
-# Follow logs in real-time
-docker-compose logs -f
-
-# View logs for specific service
-docker-compose logs -f <service-name>
-
-# View last 100 lines
-docker-compose logs --tail=100
-```
-
-### Check Status
-
-```bash
-# Check running containers
-docker-compose ps
-
-# Check GPU status (backend)
-curl http://localhost:9090/health/gpu
-
-# Check registered workers
-curl http://localhost:9090/workers
-```
+Open the main dashboard at `http://localhost:8810` (or your domain) to see all services.
 
 ## Project Structure
 
 ```
 GPU-Polling/
-├── backend/                    # Ubuntu GPU PC services
-│   ├── docker-compose.yml      # Backend orchestration
-│   ├── orchestrator/           # Go-based job router
-│   ├── worker/                 # GPU worker implementations
-│   │   ├── sdxl_worker/        # SDXL image generation
-│   │   ├── z-image_worker/     # Z-Image Turbo
-│   │   └── qwen-image-2512_worker/  # Qwen vision-language
-│   ├── config/                 # Configuration files
-│   └── init.sql                # Database schema
+├── backend/
+│   ├── docker-compose.yml
+│   ├── orchestrator/               # Go — job routing, worker lifecycle
+│   ├── worker/
+│   │   ├── shared/                 # Shared proto, GPU lock, metrics
+│   │   ├── sdxl_worker/            # SDXL image generation (~12GB VRAM)
+│   │   ├── z-image_worker/         # Z-Image Turbo (~16GB VRAM)
+│   │   ├── qwen-image-edit_worker/ # Qwen image editing (~12GB VRAM)
+│   │   ├── qwen-image-variations_worker/
+│   │   ├── qwen35-chat_worker/     # Qwen3.5-35B GGUF Q4 (~22GB VRAM)
+│   │   └── omnilottie_worker/      # OmniLottie text/image/video→Lottie
+│   ├── omnilottie/                 # OmniLottie model code (decoder + lottie pkg)
+│   ├── config/
+│   │   ├── apps.yaml               # App registry
+│   │   └── workers.yaml            # VRAM/timing config
+│   └── migrations/                 # PostgreSQL migrations
 │
-├── frontend/                   # UI services
-│   ├── docker-compose.yml      # Frontend orchestration
-│   ├── main-dashboard/         # Service hub (:8080)
-│   ├── sdxl-ui/                # SDXL UI (:7861)
-│   ├── z-image-ui/             # Z-Image UI (:7862)
-│   ├── qwen-ui/                # Qwen UI (:7863)
-│   └── admin-dashboard/        # Admin panel (:8000)
+├── frontend/
+│   ├── docker-compose.yml
+│   ├── main-dashboard/             # :8810
+│   ├── admin-dashboard/            # :8811
+│   ├── sdxl-ui/                    # :8861
+│   ├── z-image-ui/                 # :8862
+│   ├── qwen-image-edit-ui/         # :8865
+│   ├── qwen-image-variations-ui/   # :8866
+│   ├── qwen35-chat-ui/             # :8867
+│   └── omnilottie-ui/              # :8868
 │
-├── .env.example                # Environment template
-├── development.md              # Development guide
-└── ADDING_NEW_APPS.md          # Guide for new models
+├── scripts/
+│   ├── cleanup_orphaned_gpu.sh
+│   ├── monitor_job.sh
+│   ├── submit_job.sh
+│   └── test_dynamic_switching.sh
+│
+├── create_worker.sh                # Scaffold a new worker
+├── create_new_app.sh
+├── ADDING_NEW_APPS.md
+└── WRITEUP.md                      # How and why it was built
 ```
 
 ## Configuration
 
-### Environment Variables
-
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `backend/.env` and set:
 
 ```bash
-# Database
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_secure_password
-POSTGRES_DB=gpu_orchestrator
-
-# Hugging Face (for model downloads)
+POSTGRES_PASSWORD=your_password
+JWT_SECRET=your_jwt_secret
 HF_TOKEN=your_huggingface_token
 ```
 
-### Changing Backend URL
+## Adding a New Model
 
-Edit `frontend/docker-compose.yml` and update `ORCHESTRATOR_URL`:
-
-```yaml
-environment:
-  - ORCHESTRATOR_URL=http://<BACKEND_IP>:9090
+```bash
+./create_worker.sh my-model
+# Implement handler.py, add to config/apps.yaml and config/workers.yaml
 ```
+
+See [ADDING_NEW_APPS.md](ADDING_NEW_APPS.md) for the full guide.
 
 ## Troubleshooting
 
-### Services not starting
-
 ```bash
-# Check container logs
-docker-compose logs <service-name>
+# Check GPU status
+curl http://localhost:8890/health/gpu
 
-# Check if ports are in use
-sudo lsof -i :9090
-sudo lsof -i :8080
+# Check registered workers
+curl http://localhost:8890/workers
+
+# View orchestrator logs
+docker logs gpu-orchestrator
+
+# GPU not freed after container stop
+bash scripts/cleanup_orphaned_gpu.sh
 ```
-
-### GPU not detected
-
-```bash
-# Verify NVIDIA drivers
-nvidia-smi
-
-# Check NVIDIA Container Toolkit
-docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
-```
-
-### Workers not registering
-
-```bash
-# Check orchestrator logs
-cd backend && docker-compose logs orchestrator
-
-# Check worker logs
-docker-compose logs sdxl-worker
-
-# Verify network connectivity
-docker network ls
-docker network inspect backend_backend-network
-```
-
-### Database issues
-
-```bash
-# Reset database (WARNING: deletes all data)
-cd backend
-docker-compose down -v
-docker-compose up -d postgres
-docker-compose up -d
-```
-
-## Adding New Workers
-
-See [ADDING_NEW_APPS.md](ADDING_NEW_APPS.md) for instructions on adding new GPU workers.
-
-## Development
-
-See [development.md](development.md) for the complete development setup guide.
