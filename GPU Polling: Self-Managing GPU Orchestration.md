@@ -428,7 +428,7 @@ Registration steps:
 3. `docker compose build my-model-worker`
 4. `docker compose restart orchestrator`
 
-See `ADDING_NEW_APPS.md` for the full guide.
+See [GPU Polling: Self-Managing GPU Orchestration](GPU Polling: Self-Managing GPU Orchestration.md) for the full guide.
 
 ### Method 2: Adapting an Existing Codebase (OmniLottie)
 
