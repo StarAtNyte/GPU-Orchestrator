@@ -38,7 +38,7 @@ The question was how to let the team use all of them through browser UIs without
                              │  HTTP :8890
                              ▼
 ┌────────────────────────────────────────────────────────────────┐
-│  FRONTEND  (separate server, behind nginx)                     │
+│  FRONTEND  (same machine, served via nginx)                    │
 │                                                                │
 │  main-dashboard      :8810   /gpu-polling/                     │
 │  admin-dashboard     :8811   /gpu-polling/admin/               │
@@ -51,7 +51,7 @@ The question was how to let the team use all of them through browser UIs without
 └────────────────────────────────────────────────────────────────┘
 ```
 
-The backend and frontend run on separate machines and communicate over HTTP. The GPU machine only runs GPU workloads. All frontend apps sit behind an nginx reverse proxy with path prefixes — one domain, one bookmark for the team.
+Both stacks run on the same GPU machine, but in separate Docker Compose files. The frontend containers talk to the backend via the Docker host bridge IP (`172.17.0.1`). nginx sits in front of all the frontend apps and routes by path prefix, so the team can reach everything from their browsers at one domain regardless of where they're sitting.
 
 ---
 
@@ -493,7 +493,8 @@ curl http://localhost:8890/health/gpu
 ```
 
 ```bash
-# Frontend — edit docker-compose.yml: set ORCHESTRATOR_URL=http://172.17.0.1:8890
+# Frontend — runs on the same machine, connects to backend via Docker host bridge
+# ORCHESTRATOR_URL=http://172.17.0.1:8890 is already set in frontend/docker-compose.yml
 cd frontend
 docker compose up -d
 curl http://localhost:8810/health
