@@ -51,14 +51,14 @@ FRONTEND_SERVICES = {
         "description": "Generate random photo variations of a person",
         "app_id": "qwen-image-variations"
     },
-    "qwen35-chat": {
-        "name": "Qwen3.5 Chat",
+    "ai-chat": {
+        "name": "AI Chat",
         "url": "/gpu-polling/qwen35-chat/",
-        "container_name": "qwen35-chat-ui",
+        "container_name": "ai-chat-ui",
         "port": 7867,
         "icon": "💬",
-        "description": "Chat with Qwen3.5-35B-A3B running locally on RTX 4090",
-        "app_id": "qwen35-chat"
+        "description": "Chat with Qwen3.5 35B or Gemma 4 26B running locally on RTX 4090",
+        "app_id": "ai-chat"
     },
     "omnilottie": {
         "name": "OmniLottie",
@@ -75,7 +75,7 @@ FRONTEND_SERVICES = {
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the main hub."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.post("/auth/login")
@@ -105,7 +105,7 @@ async def auth_signup(request: Request):
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
     """Serve the user history page."""
-    return templates.TemplateResponse("history.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="history.html")
 
 
 @app.get("/health")

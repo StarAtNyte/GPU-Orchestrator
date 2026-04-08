@@ -362,6 +362,51 @@ services:
       - backend-network
     restart: "no"   # Managed dynamically by orchestrator (exclusive_mode)
 
+  gemma4-chat-worker:
+    build:
+      context: .
+      dockerfile: worker/gemma4-chat_worker/Dockerfile
+    container_name: gemma4-chat-worker
+    depends_on:
+      - redis
+      - postgres
+      - etcd
+      - orchestrator
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-orchestrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
+      ETCD_HOST: etcd
+      ETCD_PORT: 2379
+      ETCD_ENDPOINT: etcd:2379
+      WORKER_ID: gemma4-chat-worker
+      APP_ID: gemma4-chat
+      HF_TOKEN: ${HF_TOKEN:-}
+      MODEL_DIR: /models
+      # Gemma 4 26B-A4B Q4 GGUF (~17 GB) — fits in RTX 4090 24 GB
+      HF_REPO: unsloth/gemma-4-26B-A4B-it-GGUF
+      MODEL_FILE: gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
+      N_CTX: "16384"
+      N_GPU_LAYERS: "99"
+      IDLE_TIMEOUT: "300"
+      DISABLE_VISION: "true"
+    volumes:
+      - ${HOME}/models/gemma4-chat:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - backend-network
+    restart: "no"   # Managed dynamically by orchestrator (exclusive_mode)
+
 volumes:
   postgres_data:
     driver: local

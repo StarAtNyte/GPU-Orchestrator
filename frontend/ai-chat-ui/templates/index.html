@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Qwen3.5 Chat</title>
+  <title>AI Chat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -839,6 +839,34 @@
     }
     .edit-actions { display: flex; gap: 6px; margin-top: 4px; }
 
+    /* ── Model Switcher ── */
+    .model-switcher {
+      display: flex;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xs);
+      padding: 3px;
+      gap: 2px;
+    }
+    .model-switcher-btn {
+      padding: 4px 12px;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      font-size: 12px; font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .model-switcher-btn:hover { color: var(--text-primary); }
+    .model-switcher-btn.active {
+      background: var(--bg-primary);
+      color: var(--primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+
     /* ── Responsive ── */
     @media (max-width: 768px) {
       .sidebar { position: fixed; z-index: 100; height: 100vh; }
@@ -855,10 +883,10 @@
 <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
 <aside class="sidebar" id="historySidebar">
   <div class="sidebar-brand">
-    <div class="sidebar-logo">Q</div>
+    <div class="sidebar-logo"><span class="material-symbols-outlined" style="font-size:18px">chat</span></div>
     <div class="sidebar-brand-text">
-      <div class="sidebar-brand-name">Qwen3.5 Chat</div>
-      <div class="sidebar-brand-sub">MoE · RTX 4090</div>
+      <div class="sidebar-brand-name">AI Chat</div>
+      <div class="sidebar-brand-sub" id="modelSub">Qwen3.5 · RTX 4090</div>
     </div>
   </div>
 
@@ -888,9 +916,9 @@
       <button class="header-toggle active" id="historyToggle" onclick="toggleHistory()" title="Toggle sidebar">
         <span class="material-symbols-outlined">menu</span>
       </button>
-      <div class="header-model-selector">
-        <span class="material-symbols-outlined">smart_toy</span>
-        Qwen3.5-35B-A3B
+      <div class="model-switcher" id="modelSwitcher">
+        <button class="model-switcher-btn" data-model="qwen35-chat" onclick="switchModel('qwen35-chat')">Qwen3.5 35B</button>
+        <button class="model-switcher-btn active" data-model="gemma4-chat" onclick="switchModel('gemma4-chat')">Gemma 4 26B</button>
       </div>
     </div>
     <div class="header-actions">
@@ -918,7 +946,7 @@
           <span class="material-symbols-outlined">smart_toy</span>
         </div>
         <h2>What can I help you with?</h2>
-        <p>Qwen3.5-35B-A3B running locally. Ask anything — code, math, writing, analysis.</p>
+        <p id="welcomeDesc">Running locally on RTX 4090. Ask anything — code, math, writing, analysis.</p>
         <div class="welcome-cards">
           <button class="welcome-card" onclick="quickPrompt('Explain how transformers work in deep learning')">
             <span class="welcome-card-icon material-symbols-outlined">school</span>
@@ -957,7 +985,7 @@
              style="display:none" onchange="handleFileSelect(event)" />
 
       <div class="input-box">
-        <textarea id="userInput" placeholder="Message Qwen3.5…"
+        <textarea id="userInput" placeholder="Message AI Chat…"
           onkeydown="handleKey(event)" oninput="autoResize(this)" rows="1"></textarea>
         <div class="input-actions-bar">
           <div class="input-actions-left">
@@ -988,7 +1016,7 @@
       </div>
     </div>
 
-    <div class="settings-section">
+    <div class="settings-section" id="thinkingSection">
       <div class="settings-label">Thinking</div>
       <div class="toggle-row">
         <div>
@@ -1073,6 +1101,39 @@ if (typeof pdfjsLib !== 'undefined') {
 }
 
 // ═══════════════════════════════════════════════════════
+// Model selection
+// ═══════════════════════════════════════════════════════
+const MODELS = {
+  'qwen35-chat': { name: 'Qwen3.5 35B', sub: 'Qwen3.5 · RTX 4090', hasThinking: true,  placeholder: 'Message Qwen3.5…' },
+  'gemma4-chat': { name: 'Gemma 4 26B', sub: 'Gemma 4 · RTX 4090',  hasThinking: false, placeholder: 'Message Gemma 4…' },
+};
+let selectedModel = 'gemma4-chat';
+let warmupEventSource = null;
+
+function switchModel(modelId) {
+  if (selectedModel === modelId) return;
+  selectedModel = modelId;
+  const m = MODELS[modelId];
+  document.querySelectorAll('.model-switcher-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.model === modelId));
+  const thinkSec = document.getElementById('thinkingSection');
+  if (thinkSec) thinkSec.style.display = m.hasThinking ? '' : 'none';
+  if (!m.hasThinking) {
+    const chk = document.getElementById('enableThinking');
+    if (chk) chk.checked = false;
+  }
+  const sub = document.getElementById('modelSub');
+  if (sub) sub.textContent = m.sub;
+  const desc = document.getElementById('welcomeDesc');
+  if (desc) desc.textContent = `${m.name} running locally on RTX 4090. Ask anything — code, math, writing, analysis.`;
+  const input = document.getElementById('userInput');
+  if (input && !input.disabled) input.placeholder = m.placeholder;
+  modelReady = false;
+  disableInput();
+  initModelWarmup();
+}
+
+// ═══════════════════════════════════════════════════════
 // State
 // ═══════════════════════════════════════════════════════
 let history = [];
@@ -1087,7 +1148,7 @@ let attachedFiles = [];
 let modelReady = false;
 
 function markModelWarm() {
-  localStorage.setItem('qwen35_last_response', Date.now().toString());
+  localStorage.setItem('ai_chat_last_response', Date.now().toString());
 }
 
 function setModelStatus(state, text) {
@@ -1104,7 +1165,7 @@ function enableInput() {
   modelReady = true;
   const input = document.getElementById('userInput');
   const btn   = document.getElementById('sendBtn');
-  if (input) { input.disabled = false; input.placeholder = 'Message Qwen3.5…'; }
+  if (input) { input.disabled = false; input.placeholder = MODELS[selectedModel].placeholder; }
   if (btn && !generating) btn.disabled = false;
 }
 
@@ -1116,35 +1177,36 @@ function disableInput() {
 }
 
 async function initModelWarmup() {
+  if (warmupEventSource) { warmupEventSource.close(); warmupEventSource = null; }
   disableInput();
   setModelStatus('loading', 'Loading model…');
   try {
-    const res  = await fetch('api/warmup', { headers: Auth.getAuthHeaders() });
+    const res  = await fetch(`api/warmup?model=${selectedModel}`, { headers: Auth.getAuthHeaders() });
     const data = await res.json();
     if (!data.success) {
       setModelStatus('error', 'Failed to start model');
       enableInput();
       return;
     }
-    const evtSource = new EventSource(`api/stream/${data.job_id}`);
-    evtSource.onmessage = (e) => {
+    warmupEventSource = new EventSource(`api/stream/${data.job_id}`);
+    warmupEventSource.onmessage = (e) => {
       if (e.data === '' || e.data.startsWith(':')) return;
       try {
         const msg = JSON.parse(e.data);
         if (msg.done) {
-          evtSource.close();
+          warmupEventSource.close(); warmupEventSource = null;
           setModelStatus('ready', 'Model ready');
           enableInput();
           markModelWarm();
         } else if (msg.error) {
-          evtSource.close();
+          warmupEventSource.close(); warmupEventSource = null;
           setModelStatus('error', 'Model error');
           enableInput();
         }
       } catch {}
     };
-    evtSource.onerror = () => {
-      evtSource.close();
+    warmupEventSource.onerror = () => {
+      warmupEventSource.close(); warmupEventSource = null;
       setModelStatus('error', 'Connection error');
       enableInput();
     };
@@ -1237,6 +1299,7 @@ function onThinkingToggle() {
 
 function getSettings() {
   return {
+    app_id:           selectedModel,
     temperature:      parseFloat(document.getElementById('temperature').value),
     top_p:            parseFloat(document.getElementById('topP').value),
     top_k:            20,
@@ -1414,7 +1477,7 @@ function newChat() {
   msgs.innerHTML = `<div class="welcome" id="welcome">
     <div class="welcome-icon"><span class="material-symbols-outlined">smart_toy</span></div>
     <h2>What can I help you with?</h2>
-    <p>Qwen3.5-35B-A3B running locally. Ask anything — code, math, writing, analysis.</p>
+    <p>${MODELS[selectedModel].name} running locally on RTX 4090. Ask anything — code, math, writing, analysis.</p>
     <div class="welcome-cards">
       <button class="welcome-card" onclick="quickPrompt('Explain how transformers work in deep learning')">
         <span class="welcome-card-icon material-symbols-outlined">school</span>
@@ -1803,7 +1866,7 @@ function appendAssistantBubble() {
   actions.innerHTML = `<button class="action-btn" onclick="copyBubbleText(this)">Copy</button>`;
   wrapEl.appendChild(actions);
 
-  row.innerHTML = `<div class="avatar assistant">Q</div>`;
+  row.innerHTML = `<div class="avatar assistant">AI</div>`;
   row.appendChild(wrapEl);
   msgs.appendChild(row);
   scrollToBottom();
@@ -1936,7 +1999,7 @@ function escapeAttr(s) {
 // ═══════════════════════════════════════════════════════
 // Conversation history
 // ═══════════════════════════════════════════════════════
-const HIST_KEY = 'qwen35_conversations';
+const HIST_KEY = 'ai_chat_conversations';
 const MAX_CONVS = 50;
 
 function loadAllConversations() {
@@ -2127,12 +2190,12 @@ function applyTheme(theme) {
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') || 'light';
   const next = current === 'dark' ? 'light' : 'dark';
-  localStorage.setItem('qwen35_theme', next);
+  localStorage.setItem('ai_chat_theme', next);
   applyTheme(next);
 }
 
 (function() {
-  const saved = localStorage.getItem('qwen35_theme') || 'dark';
+  const saved = localStorage.getItem('ai_chat_theme') || 'dark';
   applyTheme(saved);
   document.getElementById('enableWebSearch').checked = false;
 })();

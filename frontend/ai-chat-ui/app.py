@@ -10,14 +10,15 @@ import json
 import asyncio
 from typing import List, Any, Union
 
-app = FastAPI(title="Qwen3.5 Chat")
+app = FastAPI(title="AI Chat")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://172.17.0.1:8890")
 REDIS_HOST = os.getenv("REDIS_HOST", "172.17.0.1")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "16379"))
-APP_ID = "qwen35-chat"
+
+VALID_MODELS = {"qwen35-chat", "gemma4-chat"}
 
 
 class Message(BaseModel):
@@ -27,6 +28,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
+    app_id: str = "qwen35-chat"
     temperature: float = 0.7
     top_p: float = 0.8
     top_k: int = 20
@@ -94,13 +96,14 @@ async def gpu_health():
 async def submit_chat(chat_request: ChatRequest, request: Request):
     """Submit a chat job to the orchestrator. Returns job_id immediately."""
     auth_header = request.headers.get("Authorization", "")
+    app_id = chat_request.app_id if chat_request.app_id in VALID_MODELS else "qwen35-chat"
     # Serialize messages — content may be str or list (multimodal)
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     try:
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
-                "app_id": APP_ID,
+                "app_id": app_id,
                 "params": {
                     "messages": json.dumps(messages),
                     "temperature": str(chat_request.temperature),
@@ -210,14 +213,15 @@ async def stream_response(job_id: str, request: Request):
 
 
 @app.get("/api/warmup")
-async def warmup(request: Request):
+async def warmup(request: Request, model: str = "qwen35-chat"):
     """Submit a warmup job to pre-load the model. Returns job_id to track via SSE."""
     auth_header = request.headers.get("Authorization", "")
+    app_id = model if model in VALID_MODELS else "qwen35-chat"
     try:
         response = requests.post(
             f"{ORCHESTRATOR_URL}/submit",
             json={
-                "app_id": APP_ID,
+                "app_id": app_id,
                 "params": {"warmup": "true"},
             },
             headers={"Authorization": auth_header},

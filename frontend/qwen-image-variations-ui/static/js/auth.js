@@ -249,21 +249,26 @@
     });
   }
 
+  // ── Guest mode ───────────────────────────────────────────────────────────────
+
+  const GUEST_KEY = 'gpu_guest_mode';
+  function isGuest() { return localStorage.getItem(GUEST_KEY) === 'true'; }
+
   // ── Init ─────────────────────────────────────────────────────────────────────
 
   function init() {
     injectStyles();
-    if (!isLoggedIn()) {
+    if (!isLoggedIn() && !isGuest()) {
       redirectToLogin();
     } else {
-      const username = getUsername();
+      const username = isGuest() ? 'Guest' : getUsername();
       if (username) updateNavUserIndicator(username);
     }
   }
 
   window.Auth = {
     getToken, setToken, clearToken,
-    getUsername, isLoggedIn,
+    getUsername, isLoggedIn, isGuest,
     getAuthHeaders, fetchWithAuth,
     showModal, hideModal,
     submitLogin, submitSignup, onAuthSuccess,

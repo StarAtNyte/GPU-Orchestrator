@@ -107,6 +107,11 @@
                     class="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">Create Account</button>
                 <div id="signupError" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
             </div>
+            <div class="mt-6 text-center">
+                <button onclick="continueAsGuest()" class="text-sm text-[#9ca3af] hover:text-[#6b7280] transition-colors">
+                    Continue as guest →
+                </button>
+            </div>
         </div>
     </div>
 
@@ -223,17 +228,32 @@
         showLoggedInUI(data.username);
     }
 
+    const GUEST_KEY = 'gpu_guest_mode';
+    function isGuest() { return localStorage.getItem(GUEST_KEY) === 'true'; }
+    function setGuest() { localStorage.setItem(GUEST_KEY, 'true'); }
+    function clearGuest() { localStorage.removeItem(GUEST_KEY); }
+
+    function continueAsGuest() {
+        setGuest();
+        showLoggedInUI(null);
+    }
+
     function showLoggedInUI(username) {
         document.getElementById('authSection').classList.add('hidden');
         document.getElementById('mainContent').classList.remove('hidden');
-        document.getElementById('historyLink').classList.remove('hidden');
-        document.getElementById('userBadge').classList.remove('hidden');
-        document.getElementById('userBadgeText').textContent = '@' + username;
+        if (username) {
+            document.getElementById('historyLink').classList.remove('hidden');
+            document.getElementById('userBadge').classList.remove('hidden');
+            document.getElementById('userBadgeText').textContent = '@' + username;
+        } else {
+            document.getElementById('userBadge').classList.remove('hidden');
+            document.getElementById('userBadgeText').textContent = 'Guest';
+        }
         loadServices();
     }
 
     document.getElementById('signOutBtn').addEventListener('click', () => {
-        clearToken(); location.reload();
+        clearToken(); clearGuest(); location.reload();
     });
 
     // Enter key support
@@ -245,11 +265,17 @@
     );
 
     // Init
-    if (isLoggedIn()) {
-        showLoggedInUI(getUsername());
-    } else {
-        document.getElementById('authSection').classList.remove('hidden');
-    }
+    (function() {
+        const returnUrl = new URLSearchParams(window.location.search).get('return');
+        if (isLoggedIn()) {
+            if (returnUrl) { window.location.href = returnUrl; return; }
+            showLoggedInUI(getUsername());
+        } else if (isGuest()) {
+            showLoggedInUI(null);
+        } else {
+            document.getElementById('authSection').classList.remove('hidden');
+        }
+    })();
     </script>
     <script src="static/app.js"></script>
 </body>

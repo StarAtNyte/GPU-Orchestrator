@@ -4,7 +4,14 @@ workers:
     app_id: "qwen35-chat"
     queue: "jobs:qwen35-chat"
     vram_required_gb: 22
-    startup_time_seconds: 60
+    startup_time_seconds: 600
+    shutdown_time_seconds: 10
+
+  gemma4-chat-worker:
+    app_id: "gemma4-chat"
+    queue: "jobs:gemma4-chat"
+    vram_required_gb: 18
+    startup_time_seconds: 600
     shutdown_time_seconds: 10
 
   z-image-worker:

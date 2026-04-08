@@ -18,7 +18,7 @@ services:
       - frontend-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -124,11 +124,11 @@ services:
       retries: 3
       start_period: 10s
 
-  qwen35-chat-ui:
+  ai-chat-ui:
     build:
-      context: ./qwen35-chat-ui
+      context: ./ai-chat-ui
       dockerfile: Dockerfile
-    container_name: qwen35-chat-ui
+    container_name: ai-chat-ui
     ports:
       - "8867:7867"
     environment:

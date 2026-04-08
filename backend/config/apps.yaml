@@ -19,6 +19,26 @@ apps:
       N_CTX: "16384"
       N_GPU_LAYERS: "46"
       IDLE_TIMEOUT: "300"
+
+  - id: "gemma4-chat"
+    name: "Gemma 4 Chat"
+    type: "local"
+    queue: "jobs:gemma4-chat"
+    save_history: false
+    description: "Chat with Gemma 4 26B-A4B (17GB Q4) — streaming via Redis Streams"
+    gpu_vram_gb: 18
+    docker_image: "backend-gemma4-chat-worker:latest"
+    container_name: "gemma4-chat-worker"
+    idle_timeout_seconds: 300
+    startup_timeout_seconds: 180
+    environment:
+      MODEL_DIR: "/models"
+      HF_REPO: "unsloth/gemma-4-26B-A4B-it-GGUF"
+      MODEL_FILE: "gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
+      N_CTX: "16384"
+      N_GPU_LAYERS: "99"
+      IDLE_TIMEOUT: "300"
+      DISABLE_VISION: "true"
     parameters:
       - name: "messages"
         type: "string"
