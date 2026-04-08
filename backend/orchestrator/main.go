@@ -703,9 +703,9 @@ func userJobsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		job := map[string]interface{}{
-			"job_id":  jobID,
-			"app_id":  appID,
-			"status":  status,
+			"job_id": jobID,
+			"app_id": appID,
+			"status": status,
 		}
 
 		if createdAt.Valid {
@@ -1075,14 +1075,14 @@ func monitorJobTimeouts() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		// Timeout for QUEUED jobs: 10 minutes
+		// Timeout for QUEUED jobs: 2 hours (GPU queues can wait for workers)
 		result, err := db.Exec(`
 			UPDATE jobs
 			SET status = 'FAILED',
-			    error_log = 'Job timed out - no worker available within 10 minutes',
+			    error_log = 'Job timed out - no worker available within 2 hours',
 			    completed_at = NOW()
 			WHERE status = 'QUEUED'
-			  AND created_at < NOW() - INTERVAL '10 minutes'
+			  AND created_at < NOW() - INTERVAL '2 hours'
 		`)
 
 		if err != nil {
@@ -1230,8 +1230,6 @@ func monitorStreams() {
 	}
 }
 
-
-
 // monitorIdleWorkers stops workers that have been idle for too long
 func monitorIdleWorkers() {
 	log.Println("[IDLE MONITOR] Starting idle worker monitor...")
@@ -1284,14 +1282,14 @@ func monitorJobCompletions() {
 				).Scan(&status)
 
 				if err == nil && (status == "COMPLETED" || status == "FAILED") {
-						// The model is still loaded in GPU VRAM — the worker's idle timer
-						// will call offload_model() after IdleTimeout seconds, transitioning
-						// it WARM → IDLE at that point. The orchestrator mirrors this here.
-						info.State = WorkerStateWarm
-						info.LastActivityTime = time.Now()
-						info.CurrentJobID = ""
-						log.Printf("[JOB MONITOR] Worker %s completed job → WARM (model still in VRAM, idle timer running)", workerID)
-					}
+					// The model is still loaded in GPU VRAM — the worker's idle timer
+					// will call offload_model() after IdleTimeout seconds, transitioning
+					// it WARM → IDLE at that point. The orchestrator mirrors this here.
+					info.State = WorkerStateWarm
+					info.LastActivityTime = time.Now()
+					info.CurrentJobID = ""
+					log.Printf("[JOB MONITOR] Worker %s completed job → WARM (model still in VRAM, idle timer running)", workerID)
+				}
 			}
 		}
 

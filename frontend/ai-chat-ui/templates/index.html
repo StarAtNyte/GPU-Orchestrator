@@ -917,7 +917,7 @@
         <span class="material-symbols-outlined">menu</span>
       </button>
       <div class="model-switcher" id="modelSwitcher">
-        <button class="model-switcher-btn" data-model="qwen35-chat" onclick="switchModel('qwen35-chat')">Qwen3.5 35B</button>
+        <button class="model-switcher-btn" data-model="qwen35-chat" onclick="switchModel('qwen35-chat')">Qwen3.5 27B</button>
         <button class="model-switcher-btn active" data-model="gemma4-chat" onclick="switchModel('gemma4-chat')">Gemma 4 26B</button>
       </div>
     </div>
@@ -941,7 +941,29 @@
   <!-- Chat area -->
   <div class="chat-area">
     <div class="messages" id="messages">
-      <div class="welcome" id="welcome">
+      <!-- Model Selection Screen -->
+      <div class="welcome" id="modelSelection" style="display:none">
+        <div class="welcome-icon">
+          <span class="material-symbols-outlined">smart_toy</span>
+        </div>
+        <h2>Select a Model</h2>
+        <p style="color:var(--text-secondary);margin-bottom:24px">Running locally on RTX 4090</p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:600px;margin:0 auto;">
+          <button class="welcome-card" onclick="selectModelAndStart('gemma4-chat')" style="flex:1;min-width:200px;cursor:pointer;border:2px solid transparent;">
+            <span class="welcome-card-icon material-symbols-outlined">bolt</span>
+            <span class="welcome-card-title">Gemma 4 26B</span>
+            <span class="welcome-card-desc">Fast, efficient reasoning</span>
+          </button>
+          <button class="welcome-card" onclick="selectModelAndStart('qwen35-chat')" style="flex:1;min-width:200px;cursor:pointer;border:2px solid transparent;">
+            <span class="welcome-card-icon material-symbols-outlined">psychology</span>
+            <span class="welcome-card-title">Qwen3.5 27B</span>
+            <span class="welcome-card-desc">Extended thinking, better reasoning</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Welcome/Chat Screen -->
+      <div class="welcome" id="welcome" style="display:none">
         <div class="welcome-icon">
           <span class="material-symbols-outlined">smart_toy</span>
         </div>
@@ -1104,11 +1126,22 @@ if (typeof pdfjsLib !== 'undefined') {
 // Model selection
 // ═══════════════════════════════════════════════════════
 const MODELS = {
-  'qwen35-chat': { name: 'Qwen3.5 35B', sub: 'Qwen3.5 · RTX 4090', hasThinking: true,  placeholder: 'Message Qwen3.5…' },
+  'qwen35-chat': { name: 'Qwen3.5 27B', sub: 'Qwen3.5 · RTX 4090', hasThinking: true,  placeholder: 'Message Qwen3.5…' },
   'gemma4-chat': { name: 'Gemma 4 26B', sub: 'Gemma 4 · RTX 4090',  hasThinking: false, placeholder: 'Message Gemma 4…' },
 };
 let selectedModel = 'gemma4-chat';
 let warmupEventSource = null;
+let modelSelected = false;
+
+function selectModelAndStart(modelId) {
+  selectedModel = modelId;
+  modelSelected = true;
+  document.getElementById('modelSelection').style.display = 'none';
+  document.getElementById('welcome').style.display = '';
+  document.querySelectorAll('.model-switcher-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.model === modelId));
+  startWarmup();
+}
 
 function switchModel(modelId) {
   if (selectedModel === modelId) return;
@@ -2168,7 +2201,10 @@ setInterval(checkStatus, 30000);
 checkGPUHealth();
 setInterval(checkGPUHealth, 3000);
 
-initModelWarmup();
+// Show model selection screen instead of auto-warmup
+document.getElementById('modelSelection').style.display = '';
+document.getElementById('welcome').style.display = 'none';
+document.getElementById('sendBtn').disabled = true;
 
 renderHistoryList();
 

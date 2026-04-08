@@ -29,8 +29,12 @@ from shared.gpu_lock import GPUMemoryLock
 logger = logging.getLogger(__name__)
 
 MODEL_DIR = os.getenv("MODEL_DIR", "/models")
-HF_REPO = os.getenv("HF_REPO", "unsloth/Qwen3.5-35B-A3B-GGUF")
-MODEL_FILE = os.getenv("MODEL_FILE", "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf")
+HF_REPO = os.getenv(
+    "HF_REPO", "Jackrong/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-GGUF"
+)
+MODEL_FILE = os.getenv(
+    "MODEL_FILE", "Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled-Q4_K_M.gguf"
+)
 MMPROJ_FILE = os.getenv("MMPROJ_FILE", "mmproj-F16.gguf")
 DISABLE_VISION = os.getenv("DISABLE_VISION", "true").lower() in ("1", "true", "yes")
 MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILE)
@@ -166,7 +170,7 @@ class Qwen35ChatHandler:
             if self.gpu_lock:
                 logger.info("[GPU_LOCK] Acquiring lock before loading llama-server...")
                 try:
-                    with self.gpu_lock.locked(timeout=1800, required_memory_mb=22000):
+                    with self.gpu_lock.locked(timeout=1800, required_memory_mb=15000):
                         self._load_model_internal()
                 except TimeoutError as e:
                     logger.error(f"[GPU_LOCK] Failed to acquire lock: {e}")
@@ -229,10 +233,7 @@ class Qwen35ChatHandler:
                 out = self.server_proc.stdout.read().decode(errors="replace")
                 raise RuntimeError(f"llama-server exited:\n{out[-2000:]}")
             try:
-                if (
-                    requests.get(f"{SERVER_URL}/health", timeout=2).status_code
-                    == 200
-                ):
+                if requests.get(f"{SERVER_URL}/health", timeout=2).status_code == 200:
                     logger.info("llama-server ready")
                     return
             except requests.exceptions.ConnectionError:
