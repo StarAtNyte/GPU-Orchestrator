@@ -108,6 +108,29 @@ func jwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// optionalJwtAuthMiddleware injects claims if a valid token is present, but allows
+// unauthenticated requests through (for guest-accessible endpoints).
+func optionalJwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+			claims, err := parseJWT(strings.TrimPrefix(authHeader, "Bearer "))
+			if err == nil {
+				ctx := context.WithValue(r.Context(), claimsContextKey, claims)
+				r = r.WithContext(ctx)
+			}
+		}
+
+		next(w, r)
+	}
+}
+
 // getUsernameFromContext extracts the authenticated username from request context.
 func getUsernameFromContext(r *http.Request) string {
 	claims, ok := r.Context().Value(claimsContextKey).(*Claims)

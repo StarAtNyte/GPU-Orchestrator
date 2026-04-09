@@ -57,7 +57,7 @@ FRONTEND_SERVICES = {
         "container_name": "ai-chat-ui",
         "port": 7867,
         "icon": "💬",
-        "description": "Chat with Qwen3.5 35B or Gemma 4 26B running locally on RTX 4090",
+        "description": "Chat with Qwen3.5 27B or Gemma 4 26B running locally on RTX 4090",
         "app_id": "ai-chat"
     },
     "omnilottie": {

@@ -190,7 +190,7 @@ func main() {
 	http.HandleFunc("/auth/login", loginHandler)
 	http.HandleFunc("/auth/me", jwtAuthMiddleware(meHandler))
 
-	http.HandleFunc("/submit", jwtAuthMiddleware(submitJobHandler))
+	http.HandleFunc("/submit", optionalJwtAuthMiddleware(submitJobHandler))
 	http.HandleFunc("/status/", statusHandler)
 	http.HandleFunc("/workers", workersHandler)
 	http.HandleFunc("/health/gpu", gpuHealthHandler)
@@ -253,11 +253,10 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get authenticated username from JWT context
+	// Get authenticated username from JWT context; fall back to "guest"
 	username := getUsernameFromContext(r)
 	if username == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+		username = "guest"
 	}
 
 	// Rate limit: 20 submissions per minute per username

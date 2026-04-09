@@ -927,7 +927,7 @@
         <span id="gpuStatusText" style="white-space:nowrap;">Checking GPU...</span>
       </div>
       <div class="status-dot" id="statusDot" title="Orchestrator status"></div>
-      <span id="modelStatusBadge" class="model-status-badge loading">Loading model…</span>
+      <span id="modelStatusBadge" class="model-status-badge">Select a model to start</span>
       <button class="btn" id="settingsToggle" onclick="toggleSettings()">
         <span class="material-symbols-outlined" style="font-size:16px">tune</span>
         Settings
@@ -1052,7 +1052,7 @@
       </div>
     </div>
 
-    <div class="settings-section" style="display:none">
+    <div class="settings-section">
       <div class="settings-label">Tools</div>
       <div class="toggle-row">
         <div>
@@ -1060,7 +1060,7 @@
           <div class="toggle-sub">DuckDuckGo — searches when needed</div>
         </div>
         <label class="toggle">
-          <input type="checkbox" id="enableWebSearch" autocomplete="off" />
+          <input type="checkbox" id="enableWebSearch" autocomplete="off" checked />
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -1129,23 +1129,25 @@ const MODELS = {
   'qwen35-chat': { name: 'Qwen3.5 27B', sub: 'Qwen3.5 · RTX 4090', hasThinking: true,  placeholder: 'Message Qwen3.5…' },
   'gemma4-chat': { name: 'Gemma 4 26B', sub: 'Gemma 4 · RTX 4090',  hasThinking: false, placeholder: 'Message Gemma 4…' },
 };
-let selectedModel = 'gemma4-chat';
+let selectedModel = localStorage.getItem('ai_chat_model') || 'gemma4-chat';
 let warmupEventSource = null;
 let modelSelected = false;
 
 function selectModelAndStart(modelId) {
   selectedModel = modelId;
+  localStorage.setItem('ai_chat_model', modelId);
   modelSelected = true;
   document.getElementById('modelSelection').style.display = 'none';
   document.getElementById('welcome').style.display = '';
   document.querySelectorAll('.model-switcher-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.model === modelId));
-  startWarmup();
+  initModelWarmup();
 }
 
 function switchModel(modelId) {
   if (selectedModel === modelId) return;
   selectedModel = modelId;
+  localStorage.setItem('ai_chat_model', modelId);
   const m = MODELS[modelId];
   document.querySelectorAll('.model-switcher-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.model === modelId));
@@ -1239,6 +1241,7 @@ async function initModelWarmup() {
       } catch {}
     };
     warmupEventSource.onerror = () => {
+      if (!warmupEventSource) return;
       warmupEventSource.close(); warmupEventSource = null;
       setModelStatus('error', 'Connection error');
       enableInput();
@@ -1599,7 +1602,7 @@ async function sendMessage(prefillText) {
   const settings = getSettings();
 
   try {
-    if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { Auth.showModal(); return; }
+    if (typeof Auth !== 'undefined' && !Auth.isLoggedIn() && !Auth.isGuest()) { Auth.showModal(); return; }
     const chatHeaders = typeof Auth !== 'undefined' ? Auth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('api/chat', {
       method: 'POST',
@@ -2201,10 +2204,18 @@ setInterval(checkStatus, 30000);
 checkGPUHealth();
 setInterval(checkGPUHealth, 3000);
 
-// Show model selection screen instead of auto-warmup
-document.getElementById('modelSelection').style.display = '';
-document.getElementById('welcome').style.display = 'none';
-document.getElementById('sendBtn').disabled = true;
+// If model was previously selected, skip selection screen and start warmup
+if (localStorage.getItem('ai_chat_model')) {
+  document.getElementById('modelSelection').style.display = 'none';
+  document.getElementById('welcome').style.display = '';
+  document.querySelectorAll('.model-switcher-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.model === selectedModel));
+  initModelWarmup();
+} else {
+  document.getElementById('modelSelection').style.display = '';
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('sendBtn').disabled = true;
+}
 
 renderHistoryList();
 
@@ -2233,7 +2244,7 @@ function toggleTheme() {
 (function() {
   const saved = localStorage.getItem('ai_chat_theme') || 'dark';
   applyTheme(saved);
-  document.getElementById('enableWebSearch').checked = false;
+  document.getElementById('enableWebSearch').checked = true;
 })();
 </script>
 </body>

@@ -26,7 +26,7 @@ DISABLE_VISION = os.getenv("DISABLE_VISION", "true").lower() in ("1", "true", "y
 MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILE)
 MMPROJ_PATH = os.path.join(MODEL_DIR, MMPROJ_FILE)
 
-N_CTX = int(os.getenv("N_CTX", "16384"))
+N_CTX = int(os.getenv("N_CTX", "32768"))
 N_GPU_LAYERS = int(os.getenv("N_GPU_LAYERS", "99"))
 N_THREADS = int(os.getenv("N_THREADS", "8"))
 N_UBATCH = int(os.getenv("N_UBATCH", "256"))
@@ -172,6 +172,7 @@ class Gemma4ChatHandler:
             "--flash-attn", "on",
             "--cache-type-k", "q8_0",
             "--cache-type-v", "q8_0",
+            "--jinja",
             "--port", str(SERVER_PORT),
             "--host", "127.0.0.1",
         ]
@@ -184,14 +185,18 @@ class Gemma4ChatHandler:
             f"| ctx={ctx} | ubatch={ubatch} | gpu_layers={N_GPU_LAYERS} "
             f"| vision={'on' if vision_active else 'off'} | port={SERVER_PORT}"
         )
+        log_path = f"/tmp/llama-server-{SERVER_PORT}.log"
+        self._llama_log = open(log_path, "w")
         self.server_proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            cmd, stdout=self._llama_log, stderr=subprocess.STDOUT
         )
 
         deadline = time.time() + 600
         while time.time() < deadline:
             if self.server_proc.poll() is not None:
-                out = self.server_proc.stdout.read().decode(errors="replace")
+                self._llama_log.flush()
+                with open(log_path) as f:
+                    out = f.read()
                 raise RuntimeError(f"llama-server exited:\n{out[-2000:]}")
             try:
                 if requests.get(f"{SERVER_URL}/health", timeout=2).status_code == 200:
@@ -343,6 +348,7 @@ class Gemma4ChatHandler:
             "max_tokens": max_tokens,
             "presence_penalty": presence_penalty,
             "stream": True,
+            "thinking": False,
         }
         if tools:
             body["tools"] = tools

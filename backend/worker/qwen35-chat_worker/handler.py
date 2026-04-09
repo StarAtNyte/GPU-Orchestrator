@@ -223,14 +223,18 @@ class Qwen35ChatHandler:
             f"| ctx={ctx} | ubatch={ubatch} | gpu_layers={N_GPU_LAYERS} "
             f"| vision={'on' if vision_active else 'off'} | port={SERVER_PORT}"
         )
+        log_path = f"/tmp/llama-server-{SERVER_PORT}.log"
+        self._llama_log = open(log_path, "w")
         self.server_proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            cmd, stdout=self._llama_log, stderr=subprocess.STDOUT
         )
 
         deadline = time.time() + 600
         while time.time() < deadline:
             if self.server_proc.poll() is not None:
-                out = self.server_proc.stdout.read().decode(errors="replace")
+                self._llama_log.flush()
+                with open(log_path) as f:
+                    out = f.read()
                 raise RuntimeError(f"llama-server exited:\n{out[-2000:]}")
             try:
                 if requests.get(f"{SERVER_URL}/health", timeout=2).status_code == 200:
@@ -241,7 +245,7 @@ class Qwen35ChatHandler:
             time.sleep(1)
 
         self.server_proc.kill()
-        raise RuntimeError("llama-server did not become ready within 5 minutes")
+        raise RuntimeError("llama-server did not become ready within 10 minutes")
 
     def offload_model(self):
         """Terminate llama-server to free GPU VRAM for other workers (WARM → IDLE)."""
