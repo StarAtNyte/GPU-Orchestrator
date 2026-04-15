@@ -540,6 +540,23 @@ class Qwen35ChatHandler:
 
             tools = [WEB_SEARCH_TOOL, ARXIV_SEARCH_TOOL] if enable_web_search else None
             working_messages = list(messages)
+
+            # Inject system prompt for web search so the model searches instead of guessing
+            if enable_web_search and (not working_messages or working_messages[0].get("role") != "system"):
+                working_messages = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You have access to web_search and arxiv_search tools. "
+                            "Your training data has a knowledge cutoff, so for ANY question about "
+                            "recent events, current news, AI model releases, software versions, "
+                            "prices, people, or anything that may have changed — ALWAYS call "
+                            "web_search first before answering. Do not answer from memory alone "
+                            "when the answer could be outdated. Today's date is "
+                            + __import__('datetime').date.today().isoformat() + "."
+                        ),
+                    }
+                ] + working_messages
             total_tokens = 0
             final_text = ""
             MAX_TOOL_ROUNDS = 5  # after this many search rounds, force a final response
