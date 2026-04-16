@@ -258,12 +258,12 @@
 
   function init() {
     injectStyles();
-    if (!isLoggedIn() && !isGuest()) {
-      redirectToLogin();
-    } else {
-      const username = isGuest() ? 'Guest' : getUsername();
-      if (username) updateNavUserIndicator(username);
+    if (!isLoggedIn()) {
+      // Always allow guest access on this app — set guest mode automatically
+      localStorage.setItem(GUEST_KEY, 'true');
     }
+    const username = isGuest() ? 'Guest' : getUsername();
+    if (username) updateNavUserIndicator(username);
   }
 
   window.Auth = {

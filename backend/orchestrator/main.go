@@ -217,6 +217,24 @@ func main() {
 	http.HandleFunc("/admin/metrics/summary", adminAuthMiddleware(adminSummaryHandler))
 	http.HandleFunc("/admin/config", adminAuthMiddleware(adminConfigHandler))
 
+	// Auto-cleanup: mark stale PROCESSING/QUEUED jobs as FAILED every 5 minutes.
+	// Jobs stuck longer than 15 minutes are always stale (max job timeout is 10 min).
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			res, err := db.Exec(
+				`UPDATE jobs SET status = 'FAILED', error_log = 'auto-cleaned: stale job'
+				 WHERE status IN ('PROCESSING', 'QUEUED')
+				   AND created_at < NOW() - INTERVAL '15 minutes'`,
+			)
+			if err != nil {
+				log.Printf("[CLEANUP] Failed to clean stale jobs: %v", err)
+			} else if n, _ := res.RowsAffected(); n > 0 {
+				log.Printf("[CLEANUP] Marked %d stale job(s) as FAILED", n)
+			}
+		}
+	}()
+
 	log.Println("[INFO] Orchestrator running on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
