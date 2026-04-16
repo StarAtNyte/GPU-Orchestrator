@@ -1,0 +1,63 @@
+flowchart LR
+    subgraph FRONT["Frontend  (Any Server)"]
+        direction TB
+        DASHBOARDS["Main Dashboard  :8810\nAdmin Dashboard  :8811"]
+        IMAGE_UIS["Image UIs\n:8861  :8862  :8865  :8866  :8868"]
+        CHAT_UI["AI Chat UI  :8867\nQwen3.5  /  Gemma4\nmodel switcher  +  SSE streaming"]
+    end
+
+    subgraph BACK["Backend  (Ubuntu GPU PC  —  RTX 4090)"]
+        direction TB
+
+        ORC["Orchestrator  :8890\n──────────────────\nJWT auth  ·  job routing\nworker lifecycle  ·  GPU lock\nidle timeout  ·  stale-job cleanup"]
+
+        subgraph INFRA["Infrastructure"]
+            direction LR
+            PG[("PostgreSQL\njob history\nuser accounts")]
+            RD[("Redis  :16379\njob queues\nchat streams")]
+            ET[("etcd\nworker registry\nTTL heartbeats")]
+        end
+
+        subgraph GPU["Local GPU Workers  —  exclusive mode"]
+            direction LR
+            IMGW["Image Workers\nSDXL · Z-Image · Qwen Edit\nQwen Variations · OmniLottie\n12–16 GB  ·  30–90 s startup"]
+            CHATW["Chat Workers\nQwen3.5-35B  ·  Gemma4-26B\n18–22 GB  ·  ~600 s startup\nllama.cpp  CUDA  sm_89"]
+        end
+    end
+
+    subgraph CLOUD["Cloud  (Modal.run)"]
+        CW["Panorama Processor\n360 outpaint + rug removal"]
+    end
+
+    %% Frontend → Orchestrator
+    FRONT -- "POST /submit\nBearer JWT" --> ORC
+    CHAT_UI -- "GET /stream/job_id\nSSE" --> ORC
+
+    %% Orchestrator ↔ Infrastructure
+    ORC -- "write job\nread result" --> PG
+    ORC -- "XADD jobs:app-id\n(dispatch)" --> RD
+    ORC -- "check registry" --> ET
+
+    %% Orchestrator → Workers (lifecycle)
+    ORC -- "docker start / stop\nVRAM check · idle timeout" --> GPU
+
+    %% Workers ↔ Infrastructure
+    GPU -- "XREAD jobs:app-id\n(pull work)" --> RD
+    GPU -- "PUT /id  TTL=10s\nheartbeat" --> ET
+    GPU -- "UPDATE status\nwrite result" --> PG
+    CHATW -- "XADD chat-stream:job_id\n(token streaming)" --> RD
+
+    %% Cloud
+    ORC -- "HTTPS forward" --> CW
+
+    classDef infra    fill:#0d2137,stroke:#4a90d9,color:#cce4ff
+    classDef worker   fill:#0d2a0d,stroke:#4caf50,color:#cceecc
+    classDef frontend fill:#2a0d0d,stroke:#cc5555,color:#ffcccc
+    classDef orch     fill:#2a1f05,stroke:#cc9933,color:#fff3cc
+    classDef cloud    fill:#1a0d2a,stroke:#9b59b6,color:#e8ccff
+
+    class PG,RD,ET infra
+    class IMGW,CHATW worker
+    class DASHBOARDS,IMAGE_UIS,CHAT_UI frontend
+    class ORC orch
+    class CW cloud
