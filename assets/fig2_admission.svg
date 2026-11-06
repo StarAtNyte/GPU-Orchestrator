@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 440" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#222"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b42318"/></marker>
+    <style>
+      .box{fill:#fff;stroke:#222;stroke-width:1.3}
+      .acc{fill:#eef3ff;stroke:#1d4ed8;stroke-width:1.5}
+      .rej{fill:#fff4f2;stroke:#b42318;stroke-width:1.3}
+      .ok{fill:#effaf2;stroke:#15803d;stroke-width:1.3}
+      .t{fill:#111}.s{fill:#555;font-size:11px}.h{fill:#333;font-weight:700;font-size:12px;letter-spacing:.06em}
+      .ln{stroke:#222;stroke-width:1.3;fill:none}.lr{stroke:#b42318;stroke-width:1.3;fill:none}
+      .y{fill:#15803d;font-size:11px;font-weight:700}.n{fill:#b42318;font-size:11px;font-weight:700}
+    </style>
+  </defs>
+  <rect width="980" height="440" fill="#fff"/>
+  <text class="h" x="20" y="26">ADMISSION PATH FOR EVERY GPU REQUEST</text>
+
+  <!-- main path -->
+  <rect class="box" x="20" y="62" width="130" height="72" rx="6"/>
+  <text class="t" x="85" y="92" text-anchor="middle">POST /submit</text><text class="s" x="85" y="110" text-anchor="middle">from app UI</text>
+
+  <rect class="box" x="188" y="62" width="130" height="72" rx="6"/>
+  <text class="t" x="253" y="92" text-anchor="middle">Rate limits</text><text class="s" x="253" y="110" text-anchor="middle">per user + per IP</text>
+
+  <rect class="acc" x="356" y="62" width="150" height="72" rx="6"/>
+  <text class="t" x="431" y="86" text-anchor="middle" font-weight="700">GPU state</text>
+  <text class="s" x="431" y="103" text-anchor="middle">nvidia-smi · per-PID VRAM</text><text class="s" x="431" y="118" text-anchor="middle">jobs · worker states</text>
+
+  <rect class="acc" x="544" y="62" width="130" height="72" rx="6"/>
+  <text class="t" x="609" y="92" text-anchor="middle" font-weight="700">Fits in VRAM?</text><text class="s" x="609" y="110" text-anchor="middle">free + reclaimable</text>
+
+  <rect class="box" x="712" y="62" width="120" height="72" rx="6"/>
+  <text class="t" x="772" y="92" text-anchor="middle">Enqueue</text><text class="s" x="772" y="110" text-anchor="middle">DB + Redis (locked)</text>
+
+  <rect class="ok" x="860" y="62" width="100" height="72" rx="6"/>
+  <text class="t" x="910" y="92" text-anchor="middle">Preflight</text><text class="s" x="910" y="110" text-anchor="middle">then start worker</text>
+
+  <path class="ln" d="M150,98 H186" marker-end="url(#a)"/>
+  <path class="ln" d="M318,98 H354" marker-end="url(#a)"/>
+  <path class="ln" d="M506,98 H542" marker-end="url(#a)"/>
+  <path class="ln" d="M674,98 H710" marker-end="url(#a)"/>
+  <path class="ln" d="M832,98 H858" marker-end="url(#a)"/>
+  <text class="y" x="522" y="90" text-anchor="middle">free /</text><text class="y" x="522" y="116" text-anchor="middle">warm</text>
+  <text class="y" x="694" y="90" text-anchor="middle">yes</text>
+
+  <!-- rejections -->
+  <path class="lr" d="M253,134 V190" marker-end="url(#r)"/>
+  <path class="lr" d="M431,134 V190" marker-end="url(#r)"/>
+  <path class="lr" d="M609,134 V190" marker-end="url(#r)"/>
+  <path class="lr" d="M910,134 V190" marker-end="url(#r)"/>
+  <text class="n" x="262" y="166">too many</text>
+  <text class="n" x="440" y="162">busy · loading ·</text><text class="n" x="440" y="176">queued · external</text>
+  <text class="n" x="618" y="166">no</text>
+  <text class="n" x="901" y="162" text-anchor="end">GPU taken</text><text class="n" x="901" y="176" text-anchor="end">meanwhile</text>
+
+  <rect class="rej" x="188" y="192" width="130" height="62" rx="6"/>
+  <text class="t" x="253" y="218" text-anchor="middle">429</text><text class="s" x="253" y="236" text-anchor="middle">Retry-After</text>
+  <rect class="rej" x="356" y="192" width="150" height="62" rx="6"/>
+  <text class="t" x="431" y="218" text-anchor="middle">503 gpu_unavailable</text><text class="s" x="431" y="236" text-anchor="middle">reason + Retry-After</text>
+  <rect class="rej" x="544" y="192" width="130" height="62" rx="6"/>
+  <text class="t" x="609" y="218" text-anchor="middle">503 not enough</text><text class="s" x="609" y="236" text-anchor="middle">GPU memory</text>
+  <rect class="rej" x="860" y="192" width="100" height="62" rx="6"/>
+  <text class="t" x="910" y="218" text-anchor="middle">Stays queued</text><text class="s" x="910" y="236" text-anchor="middle">retried later</text>
+
+  <!-- state legend -->
+  <text class="h" x="20" y="292">GPU STATES AND WHAT THEY MEAN FOR A NEW REQUEST</text>
+  <g font-size="12">
+    <rect x="20"  y="306" width="150" height="112" rx="6" fill="#effaf2" stroke="#15803d"/>
+    <text x="32" y="326" font-weight="700" fill="#15803d">free</text><text x="32" y="344" class="s">Nothing resident.</text><text x="32" y="359" class="s">Request accepted.</text>
+    <rect x="182" y="306" width="150" height="112" rx="6" fill="#effaf2" stroke="#15803d"/>
+    <text x="194" y="326" font-weight="700" fill="#15803d">warm</text><text x="194" y="344" class="s">Model loaded, idle.</text><text x="194" y="359" class="s">Accepted; may be</text><text x="194" y="374" class="s">offloaded to fit.</text>
+    <rect x="344" y="306" width="150" height="112" rx="6" fill="#fff8eb" stroke="#d97706"/>
+    <text x="356" y="326" font-weight="700" fill="#b45309">loading</text><text x="356" y="344" class="s">A model is being</text><text x="356" y="359" class="s">loaded. Refused.</text>
+    <rect x="506" y="306" width="150" height="112" rx="6" fill="#fff8eb" stroke="#d97706"/>
+    <text x="518" y="326" font-weight="700" fill="#b45309">busy</text><text x="518" y="344" class="s">One of our jobs is</text><text x="518" y="359" class="s">queued or running.</text><text x="518" y="374" class="s">Refused.</text>
+    <rect x="668" y="306" width="150" height="112" rx="6" fill="#fff4f2" stroke="#b42318"/>
+    <text x="680" y="326" font-weight="700" fill="#b42318">external</text><text x="680" y="344" class="s">A process outside</text><text x="680" y="359" class="s">the system uses the</text><text x="680" y="374" class="s">GPU. Refused.</text>
+    <rect x="830" y="306" width="130" height="112" rx="6" fill="#f3f4f6" stroke="#6b7280"/>
+    <text x="842" y="326" font-weight="700" fill="#4b5563">unknown</text><text x="842" y="344" class="s">nvidia-smi failed.</text><text x="842" y="359" class="s">Workers refuse to</text><text x="842" y="374" class="s">start (fail closed).</text>
+  </g>
+</svg>

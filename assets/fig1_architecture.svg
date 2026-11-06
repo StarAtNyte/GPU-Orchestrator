@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#222"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker>
+    <style>
+      .box{fill:#fff;stroke:#222;stroke-width:1.3}
+      .grp{fill:#f7f7f8;stroke:#999;stroke-width:1;stroke-dasharray:5 4}
+      .acc{fill:#eef3ff;stroke:#1d4ed8;stroke-width:1.5}
+      .ext{fill:#fff4f2;stroke:#b42318;stroke-width:1.3;stroke-dasharray:5 4}
+      .t{fill:#111}.s{fill:#555;font-size:11px}.h{fill:#333;font-weight:700;font-size:12px;letter-spacing:.06em}
+      .ln{stroke:#222;stroke-width:1.3;fill:none}.lb{stroke:#1d4ed8;stroke-width:1.6;fill:none}
+      .lbl{fill:#222;font-size:11px;font-style:italic}.num{fill:#1d4ed8;font-weight:700;font-size:12px}
+    </style>
+  </defs>
+  <rect width="980" height="560" fill="#fff"/>
+
+  <!-- column headings -->
+  <text class="h" x="20" y="28">CLIENT</text>
+  <text class="h" x="170" y="28">EDGE</text>
+  <text class="h" x="300" y="28">APP FRONTENDS</text>
+  <text class="h" x="520" y="28">ORCHESTRATOR (Go)</text>
+  <text class="h" x="790" y="28">STATE</text>
+
+  <!-- client -->
+  <rect class="box" x="20" y="200" width="110" height="64" rx="6"/>
+  <text class="t" x="75" y="228" text-anchor="middle">Browser</text>
+  <text class="s" x="75" y="246" text-anchor="middle">GPU Guard JS</text>
+
+  <!-- nginx -->
+  <rect class="box" x="170" y="200" width="100" height="64" rx="6"/>
+  <text class="t" x="220" y="228" text-anchor="middle">nginx</text>
+  <text class="s" x="220" y="246" text-anchor="middle">TLS · routing</text>
+  <path class="ln" d="M130,232 H168" marker-end="url(#a)"/>
+
+  <!-- frontends -->
+  <rect class="grp" x="300" y="44" width="190" height="372" rx="8"/>
+  <g class="t">
+    <rect class="box" x="314" y="60" width="162" height="40" rx="5"/><text x="395" y="84" text-anchor="middle">AI Chat (Qwen · Gemma)</text>
+    <rect class="box" x="314" y="112" width="162" height="40" rx="5"/><text x="395" y="136" text-anchor="middle">SDXL</text>
+    <rect class="box" x="314" y="164" width="162" height="40" rx="5"/><text x="395" y="188" text-anchor="middle">Z-Image</text>
+    <rect class="box" x="314" y="216" width="162" height="40" rx="5"/><text x="395" y="240" text-anchor="middle">Qwen Image Edit</text>
+    <rect class="box" x="314" y="268" width="162" height="40" rx="5"/><text x="395" y="292" text-anchor="middle">Qwen Variations</text>
+    <rect class="box" x="314" y="320" width="162" height="40" rx="5"/><text x="395" y="344" text-anchor="middle">OmniLottie</text>
+  </g>
+  <text class="s" x="395" y="384" text-anchor="middle">FastAPI proxies · forward client IP</text>
+  <text class="s" x="395" y="400" text-anchor="middle">poll /health/gpu every 3 s</text>
+  <path class="ln" d="M270,232 H298" marker-end="url(#a)"/>
+
+  <!-- orchestrator -->
+  <rect class="grp" x="520" y="44" width="236" height="372" rx="8"/>
+  <rect class="box" x="534" y="60" width="208" height="62" rx="5"/>
+  <text class="t" x="638" y="84" text-anchor="middle">Auth &amp; abuse control</text>
+  <text class="s" x="638" y="102" text-anchor="middle">JWT · lockouts · rate limits</text>
+  <rect class="acc" x="534" y="136" width="208" height="86" rx="5"/>
+  <text class="t" x="638" y="160" text-anchor="middle" font-weight="700">Admission control</text>
+  <text class="s" x="638" y="178" text-anchor="middle">GPU state: free · warm · loading</text>
+  <text class="s" x="638" y="193" text-anchor="middle">busy · external · unknown</text>
+  <text class="s" x="638" y="209" text-anchor="middle">→ 503 when GPU is in use</text>
+  <rect class="box" x="534" y="236" width="208" height="62" rx="5"/>
+  <text class="t" x="638" y="260" text-anchor="middle">Scheduler</text>
+  <text class="s" x="638" y="278" text-anchor="middle">stream monitor · idle offload</text>
+  <rect class="acc" x="534" y="312" width="208" height="86" rx="5"/>
+  <text class="t" x="638" y="336" text-anchor="middle" font-weight="700">Worker manager</text>
+  <text class="s" x="638" y="354" text-anchor="middle">start-time preflight</text>
+  <text class="s" x="638" y="369" text-anchor="middle">VRAM fit · no foreign load</text>
+  <text class="s" x="638" y="385" text-anchor="middle">circuit breaker + backoff</text>
+  <path class="ln" d="M490,232 H518" marker-end="url(#a)"/>
+  <text class="lbl" x="494" y="224">/submit</text>
+
+  <!-- state -->
+  <rect class="box" x="790" y="60" width="170" height="64" rx="6"/>
+  <text class="t" x="875" y="86" text-anchor="middle">PostgreSQL</text><text class="s" x="875" y="104" text-anchor="middle">jobs · users · metrics</text>
+  <rect class="box" x="790" y="150" width="170" height="64" rx="6"/>
+  <text class="t" x="875" y="176" text-anchor="middle">Redis Streams</text><text class="s" x="875" y="194" text-anchor="middle">queues · token stream</text>
+  <rect class="box" x="790" y="240" width="170" height="64" rx="6"/>
+  <text class="t" x="875" y="266" text-anchor="middle">etcd</text><text class="s" x="875" y="284" text-anchor="middle">worker registry · heartbeats</text>
+  <path class="ln" d="M742,91 H788" marker-end="url(#a)"/>
+  <path class="ln" d="M742,182 H788" marker-end="url(#a)"/>
+  <path class="ln" d="M742,272 H788" marker-end="url(#a)"/>
+
+  <!-- GPU host -->
+  <rect class="grp" x="300" y="440" width="660" height="106" rx="8"/>
+  <text class="h" x="946" y="459" text-anchor="end">GPU HOST (single NVIDIA GPU, 22 GB)</text>
+  <rect class="box" x="314" y="470" width="190" height="62" rx="5"/>
+  <text class="t" x="409" y="494" text-anchor="middle">Worker containers</text>
+  <text class="s" x="409" y="512" text-anchor="middle">one per app · loaded on demand</text>
+  <rect class="acc" x="560" y="470" width="180" height="62" rx="5"/>
+  <text class="t" x="650" y="494" text-anchor="middle" font-weight="700">NVIDIA GPU</text>
+  <text class="s" x="650" y="512" text-anchor="middle">one model resident at a time</text>
+  <rect class="ext" x="780" y="470" width="166" height="62" rx="5"/>
+  <text class="t" x="863" y="494" text-anchor="middle">External processes</text>
+  <text class="s" x="863" y="512" text-anchor="middle">training · Voicebox · RAG · OCR</text>
+  <path class="ln" d="M504,501 H558" marker-end="url(#a)"/>
+  <path class="ln" d="M780,501 H742" marker-end="url(#a)"/>
+
+  <!-- orchestrator -> worker mgr to containers (docker) -->
+  <path class="ln" d="M560,398 V436 H409 V468" marker-end="url(#a)"/>
+  <text class="lbl" x="548" y="430" text-anchor="end">Docker API: create · start · stop</text>
+
+  <!-- nvidia-smi sensing -->
+  <path class="lb" d="M650,468 V400" marker-end="url(#ab)"/>
+  <text class="lbl" x="662" y="436" style="fill:#1d4ed8">nvidia-smi · per-PID VRAM, util</text>
+
+
+  <!-- numbered flow markers -->
+  <circle cx="150" cy="214" r="9" fill="#fff" stroke="#1d4ed8"/><text class="num" x="150" y="218" text-anchor="middle">1</text>
+  <circle cx="505" cy="246" r="9" fill="#fff" stroke="#1d4ed8"/><text class="num" x="505" y="250" text-anchor="middle">2</text>
+  <circle cx="765" cy="168" r="9" fill="#fff" stroke="#1d4ed8"/><text class="num" x="765" y="172" text-anchor="middle">3</text>
+  <circle cx="520" cy="372" r="9" fill="#fff" stroke="#1d4ed8"/><text class="num" x="520" y="376" text-anchor="middle">4</text>
+</svg>
