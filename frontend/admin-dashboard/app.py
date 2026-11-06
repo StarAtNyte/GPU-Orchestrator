@@ -51,6 +51,18 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
+# Page requests without a valid session go to the login screen instead of a raw JSON 401.
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(StarletteHTTPException)
+async def auth_redirect_handler(request: Request, exc: StarletteHTTPException):
+    wants_page = "text/html" in request.headers.get("accept", "") and not request.url.path.startswith("/api")
+    if exc.status_code == 401 and wants_page:
+        return RedirectResponse(url="/gpu-polling/admin/login", status_code=303)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
 # Dependency for protected routes
 def get_current_admin(request: Request):
     """
