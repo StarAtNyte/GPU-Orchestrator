@@ -168,8 +168,6 @@ class ZImageUI {
         // Check health
         this.checkHealth();
         setInterval(() => this.checkHealth(), 5000);
-        this.checkGPUHealth();
-        setInterval(() => this.checkGPUHealth(), 3000);
     }
 
     async checkHealth() {

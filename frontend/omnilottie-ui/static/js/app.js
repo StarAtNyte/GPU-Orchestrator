@@ -155,7 +155,6 @@ async function checkGPUHealth() {
 }
 
 checkHealth(); setInterval(checkHealth, 10000);
-checkGPUHealth(); setInterval(checkGPUHealth, 5000);
 
 // ── Logo home ──────────────────────────────────────────────────────────────
 

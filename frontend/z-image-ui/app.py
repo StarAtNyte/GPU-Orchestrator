@@ -91,6 +91,21 @@ class GenerateRequest(BaseModel):
     shift: float = 3.0
     random_seed: bool = True
 
+
+def gpu_unavailable_response(response):
+    """Translate the orchestrator's 503 'GPU in use' reply into a UI-friendly payload."""
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    return {
+        "success": False,
+        "gpu_unavailable": True,
+        "error": body.get("message") or "GPU is currently in use. Please try again shortly.",
+        "retry_after": body.get("retry_after_seconds", 15),
+        "gpu": body.get("gpu"),
+    }
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the Z-Image UI."""
@@ -181,6 +196,8 @@ async def generate(req: GenerateRequest, request: Request):
             timeout=240  # 4 minutes to allow for model loading on cold start
         )
 
+        if response.status_code == 503:
+            return gpu_unavailable_response(response)
         if response.status_code == 200:
             data = response.json()
             return {

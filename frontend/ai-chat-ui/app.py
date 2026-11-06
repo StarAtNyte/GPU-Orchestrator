@@ -38,6 +38,21 @@ class ChatRequest(BaseModel):
     enable_web_search: bool = False
 
 
+
+def gpu_unavailable_response(response):
+    """Translate the orchestrator's 503 'GPU in use' reply into a UI-friendly payload."""
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    return {
+        "success": False,
+        "gpu_unavailable": True,
+        "error": body.get("message") or "GPU is currently in use. Please try again shortly.",
+        "retry_after": body.get("retry_after_seconds", 15),
+        "gpu": body.get("gpu"),
+    }
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -118,6 +133,8 @@ async def submit_chat(chat_request: ChatRequest, request: Request):
             headers={"Authorization": auth_header},
             timeout=30,
         )
+        if response.status_code == 503:
+            return gpu_unavailable_response(response)
         if response.status_code == 200:
             data = response.json()
             return {"success": True, "job_id": data["job_id"]}
@@ -227,6 +244,8 @@ async def warmup(request: Request, model: str = "qwen35-chat"):
             headers={"Authorization": auth_header},
             timeout=30,
         )
+        if response.status_code == 503:
+            return gpu_unavailable_response(response)
         if response.status_code == 200:
             data = response.json()
             return {"success": True, "job_id": data["job_id"]}

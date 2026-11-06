@@ -1113,6 +1113,9 @@
 
 <script>window.AUTH_REDIRECT_URL = '/gpu-polling/';</script>
 <script src="static/js/auth.js"></script>
+<script src="static/js/gpu-guard.js"></script>
+<script>GPUGuard.init({ submit: '#sendBtn', inputs: '#userInput' });</script>
+
 <script>
 // ═══════════════════════════════════════════════════════
 // PDF.js worker
@@ -1211,13 +1214,25 @@ function disableInput() {
   if (btn) btn.disabled = true;
 }
 
+let warmupRetryTimer = null;
 async function initModelWarmup() {
+  clearTimeout(warmupRetryTimer);
   if (warmupEventSource) { warmupEventSource.close(); warmupEventSource = null; }
   disableInput();
   setModelStatus('loading', 'Loading model…');
   try {
     const res  = await fetch(`api/warmup?model=${selectedModel}`, { headers: Auth.getAuthHeaders() });
     const data = await res.json();
+    if (!data.success && data.gpu_unavailable) {
+      // GPU is in use (other app, other model, or an outside process). Keep the
+      // input locked and retry until it frees up.
+      setModelStatus('loading', 'Waiting for GPU\u2026 ' + (data.error || ''));
+      const wanted = selectedModel;
+      clearTimeout(warmupRetryTimer);
+      warmupRetryTimer = setTimeout(() => { if (selectedModel === wanted) initModelWarmup(); },
+        Math.max(5, Math.min(data.retry_after || 15, 60)) * 1000);
+      return;
+    }
     if (!data.success) {
       setModelStatus('error', 'Failed to start model');
       enableInput();
@@ -1612,7 +1627,9 @@ async function sendMessage(prefillText) {
     const data = await res.json();
 
     if (!data.success) {
-      appendError(data.error || 'Failed to submit job');
+      appendError(data.gpu_unavailable
+        ? 'The GPU is busy right now \u2014 ' + (data.error || 'please retry in a moment.')
+        : (data.error || 'Failed to submit job'));
       setGenerating(false);
       return;
     }
@@ -2201,8 +2218,6 @@ async function checkGPUHealth() {
 }
 checkStatus();
 setInterval(checkStatus, 30000);
-checkGPUHealth();
-setInterval(checkGPUHealth, 3000);
 
 // If model was previously selected, skip selection screen and start warmup
 if (localStorage.getItem('ai_chat_model')) {

@@ -177,3 +177,7 @@ orchestrator/migrations/*.sql
 !orchestrator/migrations/*_init.sql
 
 WRITEUP.md
+
+# compiled binaries
+backend/orchestrator/orchestrator
+backend/orchestrator/gpu-orchestrator

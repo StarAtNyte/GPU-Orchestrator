@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
-	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -276,9 +277,14 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	if username == "" {
 		username = "guest"
 	}
+	// Guests are rate-limited per client IP rather than sharing one "guest" bucket.
+	rateKey := username
+	if username == "guest" {
+		rateKey = "guest@" + clientIP(r)
+	}
 
 	// Rate limit: 20 submissions per minute per username
-	if !checkRateLimit(username) {
+	if !checkRateLimit(rateKey) {
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -290,6 +296,28 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// GPU gate: refuse new work while the GPU is in use. The mutex makes the
+	// check + insert atomic so two simultaneous requests can't both pass.
+	submitMu.Lock()
+	if appConfig.Type == "local" {
+		gst, ok, reason := checkGPUForApp(req.AppID)
+		if !ok {
+			submitMu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			if gst.RetryAfterSec > 0 {
+				w.Header().Set("Retry-After", strconv.Itoa(gst.RetryAfterSec))
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":               "gpu_unavailable",
+				"message":             reason,
+				"gpu":                 gst,
+				"retry_after_seconds": gst.RetryAfterSec,
+			})
+			return
+		}
+	}
+
 	jobID := uuid.New().String()
 
 	// Insert job into PostgreSQL (PENDING status)
@@ -298,6 +326,7 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO jobs (id, app_id, status, params, username, created_at)
 		VALUES ($1, $2, $3, $4, $5, NOW())
 	`, jobID, req.AppID, "PENDING", paramsJSON, username)
+	submitMu.Unlock()
 	if err != nil {
 		log.Printf("[ERROR] Failed to insert job into database: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -1008,82 +1037,8 @@ func gpuHealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(gpuHealth)
 }
 
-// getGPUHealth queries nvidia-smi for GPU status
-func getGPUHealth() map[string]interface{} {
-	// Query nvidia-smi for GPU memory info
-	cmd := exec.Command("nvidia-smi", "--query-gpu=memory.free,memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits")
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		log.Printf("[HEALTH] nvidia-smi failed: %v", err)
-		return map[string]interface{}{
-			"status":       "error",
-			"error":        fmt.Sprintf("Failed to query GPU: %v", err),
-			"timestamp":    time.Now().Format(time.RFC3339),
-			"is_available": false,
-		}
-	}
-
-	// Parse output: "free_mb, used_mb, total_mb, utilization_percent"
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 {
-		return map[string]interface{}{
-			"status":       "error",
-			"error":        "No GPU data returned",
-			"timestamp":    time.Now().Format(time.RFC3339),
-			"is_available": false,
-		}
-	}
-
-	// Parse the first GPU (for multi-GPU, you could expand this)
-	parts := strings.Split(strings.TrimSpace(lines[0]), ",")
-	if len(parts) < 4 {
-		return map[string]interface{}{
-			"status":       "error",
-			"error":        "Unexpected nvidia-smi output format",
-			"timestamp":    time.Now().Format(time.RFC3339),
-			"is_available": false,
-		}
-	}
-
-	freeMB := strings.TrimSpace(parts[0])
-	usedMB := strings.TrimSpace(parts[1])
-	totalMB := strings.TrimSpace(parts[2])
-	utilization := strings.TrimSpace(parts[3])
-
-	freeGB := 0.0
-	usedGB := 0.0
-	totalGB := 0.0
-	utilPercent := 0.0
-
-	fmt.Sscanf(freeMB, "%f", &freeGB)
-	fmt.Sscanf(usedMB, "%f", &usedGB)
-	fmt.Sscanf(totalMB, "%f", &totalGB)
-	fmt.Sscanf(utilization, "%f", &utilPercent)
-
-	freeGB /= 1024.0
-	usedGB /= 1024.0
-	totalGB /= 1024.0
-
-	// Determine if GPU is busy (>5% utilization)
-	isBusy := utilPercent > 5.0
-
-	// Check if there are any PROCESSING jobs
-	var activeJobs int
-	db.QueryRow("SELECT COUNT(*) FROM jobs WHERE status = 'PROCESSING'").Scan(&activeJobs)
-
-	return map[string]interface{}{
-		"status":          "ok",
-		"timestamp":       time.Now().Format(time.RFC3339),
-		"is_available":    !isBusy && activeJobs == 0,
-		"is_busy":         isBusy,
-		"active_jobs":     activeJobs,
-		"free_vram_gb":    fmt.Sprintf("%.2f", freeGB),
-		"used_vram_gb":    fmt.Sprintf("%.2f", usedGB),
-		"total_vram_gb":   fmt.Sprintf("%.2f", totalGB),
-		"utilization_pct": fmt.Sprintf("%.1f", utilPercent),
-	}
-}
+// getGPUHealth returns the authoritative GPU state (see gpu_state.go).
+func getGPUHealth() GPUState { return computeGPUState() }
 
 // monitorJobTimeouts runs a background job to mark stale QUEUED/PROCESSING jobs as FAILED
 func monitorJobTimeouts() {
@@ -1367,4 +1322,19 @@ func markPendingJobsAsFailed(queueName, errorMsg string) {
 	if count > 0 {
 		log.Printf("[CIRCUIT BREAKER] Marked %d pending jobs as FAILED for app %s", count, appID)
 	}
+}
+
+// clientIP returns the caller's IP, honouring the reverse proxy's X-Forwarded-For.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	if xr := r.Header.Get("X-Real-IP"); xr != "" {
+		return strings.TrimSpace(xr)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

@@ -175,8 +175,6 @@ class SDXLImageUI {
         setInterval(() => this.checkHealth(), 5000);
         
         // Check GPU health
-        this.checkGPUHealth();
-        this.gpuPollInterval = setInterval(() => this.checkGPUHealth(), 3000);
         }
 
         async checkHealth() {

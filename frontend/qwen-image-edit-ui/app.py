@@ -24,6 +24,21 @@ class EditRequest(BaseModel):
     cfg_scale: float = 1.0
 
 
+
+def gpu_unavailable_response(response):
+    """Translate the orchestrator's 503 'GPU in use' reply into a UI-friendly payload."""
+    try:
+        body = response.json()
+    except Exception:
+        body = {}
+    return {
+        "success": False,
+        "gpu_unavailable": True,
+        "error": body.get("message") or "GPU is currently in use. Please try again shortly.",
+        "retry_after": body.get("retry_after_seconds", 15),
+        "gpu": body.get("gpu"),
+    }
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the Qwen Image Edit UI."""
@@ -102,6 +117,8 @@ async def edit_image(req: EditRequest, request: Request):
             timeout=300
         )
 
+        if response.status_code == 503:
+            return gpu_unavailable_response(response)
         if response.status_code == 200:
             data = response.json()
             return {
