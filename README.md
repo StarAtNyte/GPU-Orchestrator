@@ -126,6 +126,7 @@ Models and their VRAM budgets live in `backend/config/apps.yaml`; the scheduler 
 | `POST /submit` | optional JWT | Submit a job (`503` when the GPU is in use) |
 | `GET /status/{job_id}` | none | Job status and result |
 | `GET /health/gpu` | none | GPU state (see above) |
+| `GET /gpu/gate` | none | `204` when the GPU may be used, `403` when in use (for nginx `auth_request`) |
 | `GET /workers` | none | Registered workers |
 | `POST /auth/signup`, `/auth/login`, `GET /auth/me` | none / JWT | Accounts |
 | `GET /user/jobs`, `/user/jobs/{id}` | JWT | Job history |
@@ -183,4 +184,4 @@ See [ADDING_NEW_APPS.md](ADDING_NEW_APPS.md). The design write-up is in [GPU Pol
 
 - One GPU is managed; multi-GPU scheduling is not implemented.
 - External-process detection relies on `nvidia-smi`; a process using the GPU that is idle (no load) is counted as held VRAM, not as busy.
-- Services outside the orchestrator (for example Voicebox) are paused in the portal but are not blocked at the application level unless they apply the same gate.
+- Services outside the orchestrator are gated in one of two ways: apps we own call `/health/gpu` directly, and third-party apps (Voicebox) are gated at nginx through `GET /gpu/gate` (`204` free, `403` in use) using `scripts/enable_voicebox_gpu_gate.sh`. The nginx gate needs a one-time `sudo` run.

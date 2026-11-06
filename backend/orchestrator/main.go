@@ -200,6 +200,7 @@ func main() {
 	http.HandleFunc("/status/", statusHandler)
 	http.HandleFunc("/workers", workersHandler)
 	http.HandleFunc("/health/gpu", gpuHealthHandler)
+	http.HandleFunc("/gpu/gate", gpuGateHandler)
 
 	// User history endpoints (protected)
 	http.HandleFunc("/user/jobs", jwtAuthMiddleware(userJobsHandler))
@@ -1329,4 +1330,20 @@ func markPendingJobsAsFailed(queueName, errorMsg string) {
 	if count > 0 {
 		log.Printf("[CIRCUIT BREAKER] Marked %d pending jobs as FAILED for app %s", count, appID)
 	}
+}
+
+// gpuGateHandler is for nginx auth_request: 204 when the GPU may be used, 403 when
+// it is in use. It lets services we cannot modify (e.g. Voicebox) be gated at the
+// proxy without touching their code.
+func gpuGateHandler(w http.ResponseWriter, r *http.Request) {
+	st := computeGPUState()
+	if st.IsAvailable {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if st.RetryAfterSec > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(st.RetryAfterSec))
+	}
+	w.Header().Set("X-GPU-State", st.State)
+	w.WriteHeader(http.StatusForbidden)
 }
