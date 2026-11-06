@@ -69,10 +69,15 @@ type smiReading struct {
 	procs                         map[int]float64 // pid -> GB
 }
 
+// runSMI executes nvidia-smi; replaced in tests to simulate any GPU condition.
+var runSMI = func(args ...string) ([]byte, error) {
+	return exec.Command("nvidia-smi", args...).CombinedOutput()
+}
+
 func readNvidiaSMI() (*smiReading, error) {
-	out, err := exec.Command("nvidia-smi",
+	out, err := runSMI(
 		"--query-gpu=memory.free,memory.used,memory.total,utilization.gpu",
-		"--format=csv,noheader,nounits").CombinedOutput()
+		"--format=csv,noheader,nounits")
 	if err != nil {
 		return nil, fmt.Errorf("nvidia-smi: %v: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -94,9 +99,9 @@ func readNvidiaSMI() (*smiReading, error) {
 	}
 
 	// Per-process memory is best-effort.
-	if pout, perr := exec.Command("nvidia-smi",
+	if pout, perr := runSMI(
 		"--query-compute-apps=pid,used_memory",
-		"--format=csv,noheader,nounits").CombinedOutput(); perr == nil {
+		"--format=csv,noheader,nounits"); perr == nil {
 		for _, ln := range strings.Split(strings.TrimSpace(string(pout)), "\n") {
 			p := strings.Split(ln, ",")
 			if len(p) < 2 {
@@ -165,17 +170,9 @@ func computeGPUState() GPUState {
 			warm = true
 		}
 	}
-	var jobApp, jobID string
-	var jobStatus string
-	err := db.QueryRow(`SELECT id, app_id, status FROM jobs
-		WHERE status IN ('PENDING','QUEUED','PROCESSING')
-		  AND created_at > NOW() - INTERVAL '`+activeJobWindow+`'
-		ORDER BY created_at LIMIT 1`).Scan(&jobID, &jobApp, &jobStatus)
-	hasJob := err == nil
+	jobID, jobApp, jobStatus, nJobs, hasJob := activeJobLookup()
 	if hasJob {
-		_ = db.QueryRow(`SELECT COUNT(*) FROM jobs
-			WHERE status IN ('PENDING','QUEUED','PROCESSING')
-			  AND created_at > NOW() - INTERVAL '` + activeJobWindow + `'`).Scan(&st.ActiveJobs)
+		st.ActiveJobs = nJobs
 		if st.ActiveApp == "" {
 			st.ActiveApp, st.ActiveJobID = jobApp, jobID
 		}
@@ -395,4 +392,20 @@ func appIDForWorkerName(name string) string {
 		}
 	}
 	return ""
+}
+
+// activeJobLookup returns the oldest unfinished job (within activeJobWindow) and the
+// number of such jobs. Replaced in tests.
+var activeJobLookup = func() (id, app, status string, count int, found bool) {
+	err := db.QueryRow(`SELECT id, app_id, status FROM jobs
+		WHERE status IN ('PENDING','QUEUED','PROCESSING')
+		  AND created_at > NOW() - INTERVAL '`+activeJobWindow+`'
+		ORDER BY created_at LIMIT 1`).Scan(&id, &app, &status)
+	if err != nil {
+		return "", "", "", 0, false
+	}
+	_ = db.QueryRow(`SELECT COUNT(*) FROM jobs
+		WHERE status IN ('PENDING','QUEUED','PROCESSING')
+		  AND created_at > NOW() - INTERVAL '` + activeJobWindow + `'`).Scan(&count)
+	return id, app, status, count, true
 }
