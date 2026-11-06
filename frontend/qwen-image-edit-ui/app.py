@@ -53,7 +53,7 @@ def client_headers(request, extra=None):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the Qwen Image Edit UI."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.post("/auth/login")

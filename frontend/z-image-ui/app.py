@@ -120,10 +120,9 @@ def client_headers(request, extra=None):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the Z-Image UI."""
-    return templates.TemplateResponse("index.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="index.html", context={
         "resolutions": RESOLUTIONS,
-        "example_prompts": EXAMPLE_PROMPTS
+        "example_prompts": EXAMPLE_PROMPTS,
     })
 
 
