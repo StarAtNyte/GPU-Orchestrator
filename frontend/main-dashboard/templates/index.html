@@ -1,292 +1,180 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-    <meta charset="utf-8" />
-    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>AI Services Dashboard</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-        rel="stylesheet" />
-    <style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-    </style>
-    <link rel="stylesheet" href="static/style.css" />
-    <script id="tailwind-config">
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        "background": "#fafafa",
-                    },
-                    fontFamily: {
-                        "sans": ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"]
-                    },
-                },
-            },
-        }
-    </script>
-    <style>
-        .card-hover:hover {
-            border-color: #ccc;
-            background: #f5f5f5;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>GPU-Polling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="static/style.css">
 </head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-wand" viewBox="0 0 24 24"><path d="m15 4 5 5L9 20H4v-5z"/><path d="M13 6l5 5"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+</svg>
 
-<body class="bg-[#fafafa] text-[#1a1a1a] min-h-screen flex flex-col">
-    <!-- TopNavBar -->
-    <header class="border-b border-[#e0e0e0] bg-white sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <h1 class="text-xl font-semibold tracking-tight">GPU Polling</h1>
-            </div>
-            <div class="flex items-center gap-6">
-                <a id="historyLink" href="history" class="hidden text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">History</a>
-                <div id="systemStatusBadge" class="flex items-center gap-2" role="status" aria-live="polite">
-                    <span id="statusDot" class="w-2 h-2 rounded-full bg-yellow-400" aria-hidden="true"></span>
-                    <span id="systemStatusText" class="text-[#666] text-sm" title="GPU status">Connecting…</span>
-                </div>
-                <!-- User badge (shown when logged in) -->
-                <div id="userBadge" class="hidden flex items-center gap-3">
-                    <span id="userBadgeText" class="text-sm font-medium text-[#374151]"></span>
-                    <button id="signOutBtn" class="text-xs text-[#6b7280] hover:text-[#111] underline">Sign out</button>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <!-- Login / Signup (shown when not logged in) -->
-    <div id="authSection" class="hidden flex-grow flex items-center justify-center px-6 py-16">
-        <div class="w-full max-w-md">
-            <div class="text-center mb-8">
-                <h2 class="text-3xl font-bold tracking-tight mb-2">GPU Workspace</h2>
-                <p class="text-[#666]">Sign in to access AI services</p>
-            </div>
-            <!-- Tabs -->
-            <div class="flex border-b border-[#e0e0e0] mb-6" role="tablist">
-                <button id="tabLogin" role="tab" onclick="switchTab('login')" class="flex-1 py-3 text-sm font-medium text-[#4f46e5] border-b-2 border-[#4f46e5]">Sign In</button>
-                <button id="tabSignup" role="tab" onclick="switchTab('signup')" class="flex-1 py-3 text-sm font-medium text-[#999] border-b-2 border-transparent hover:text-[#555]">Create Account</button>
-            </div>
-            <!-- Login form -->
-            <div id="loginForm">
-                <div class="mb-4">
-                    <label for="loginEmail" class="block text-sm font-medium text-[#374151] mb-1">Email</label>
-                    <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email"
-                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
-                </div>
-                <div class="mb-6">
-                    <label for="loginPassword" class="block text-sm font-medium text-[#374151] mb-1">Password</label>
-                    <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password"
-                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
-                </div>
-                <button id="loginBtn" onclick="handleLogin()"
-                    class="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">Sign In</button>
-                <div id="loginError" role="alert" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
-            </div>
-            <!-- Signup form -->
-            <div id="signupForm" class="hidden">
-                <div class="mb-4">
-                    <label for="signupUsername" class="block text-sm font-medium text-[#374151] mb-1">Username</label>
-                    <input id="signupUsername" type="text" placeholder="cooluser123" autocomplete="username"
-                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
-                </div>
-                <div class="mb-4">
-                    <label for="signupEmail" class="block text-sm font-medium text-[#374151] mb-1">Email</label>
-                    <input id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email"
-                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
-                </div>
-                <div class="mb-6">
-                    <label for="signupPassword" class="block text-sm font-medium text-[#374151] mb-1">Password</label>
-                    <input id="signupPassword" type="password" placeholder="Min. 8 characters" autocomplete="new-password"
-                        class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
-                </div>
-                <button id="signupBtn" onclick="handleSignup()"
-                    class="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">Create Account</button>
-                <div id="signupError" role="alert" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
-            </div>
-            <div class="mt-6 text-center">
-                <button onclick="continueAsGuest()" class="text-sm text-[#9ca3af] hover:text-[#6b7280] transition-colors">
-                    Continue as guest →
-                </button>
-            </div>
-        </div>
+<header class="bar">
+  <div class="bar-in wrap">
+    <a class="brand" href="./"><span class="mark"><svg class="i"><use href="#i-cpu"/></svg></span><span><b>GPU-Polling</b><small>one model on the GPU at a time</small></span></a>
+    <nav class="nav"><a href="/">All apps</a><a id="historyLink" href="history" class="hidden">History</a><a href="/gpu-polling/admin/">Admin</a></nav>
+    <div class="pill" id="gpuPill" data-s="unknown" role="status" aria-live="polite">
+      <span class="led"></span><b id="pillLabel">Checking GPU…</b>
+      <span class="track" aria-hidden="true"><i id="pillBar"></i></span><span class="mono vr" id="pillVram"></span>
     </div>
+    <div id="userBadge" class="user hidden"><b id="userBadgeText"></b><button id="signOutBtn" class="linkbtn" type="button">Sign out</button></div>
+  </div>
+</header>
 
-    <!-- Main content (shown when logged in) -->
-    <main id="mainContent" class="hidden flex-grow px-4 sm:px-6 py-8 sm:py-12">
-        <!-- PageHeading -->
-        <div class="text-center mb-12 max-w-2xl mx-auto">
-            <h2 class="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 tracking-tight">AI Services</h2>
-            <p class="text-[#666] text-lg">Manage your GPU generation and processing tasks from a centralized interface.</p>
-        </div>
+<!-- Sign in -->
+<div id="authSection" class="auth wrap hidden">
+  <div class="auth-card" style="--t:#eef0ff;--t2:#dfe2ff">
+    <div class="weave p-kilim" aria-hidden="true"></div>
+    <div class="auth-in">
+      <h2>GPU-Polling</h2>
+      <p class="sub">Sign in to keep your generation history, or continue as a guest.</p>
+      <div class="tabs" role="tablist">
+        <button id="tabLogin" role="tab" type="button" class="tab active" onclick="switchTab('login')">Sign in</button>
+        <button id="tabSignup" role="tab" type="button" class="tab" onclick="switchTab('signup')">Create account</button>
+      </div>
+      <div id="loginForm">
+        <div class="field"><label for="loginEmail">Email</label><input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email"></div>
+        <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" placeholder="Your password" autocomplete="current-password"></div>
+        <button id="loginBtn" type="button" class="btn dark wide" onclick="handleLogin()">Sign in</button>
+        <div id="loginError" role="alert" class="err hidden"></div>
+      </div>
+      <div id="signupForm" class="hidden">
+        <div class="field"><label for="signupUsername">Username</label><input id="signupUsername" type="text" placeholder="3–30 letters, numbers or _" autocomplete="username"></div>
+        <div class="field"><label for="signupEmail">Email</label><input id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email"></div>
+        <div class="field"><label for="signupPassword">Password</label><input id="signupPassword" type="password" placeholder="At least 8 characters" autocomplete="new-password"></div>
+        <button id="signupBtn" type="button" class="btn dark wide" onclick="handleSignup()">Create account</button>
+        <div id="signupError" role="alert" class="err hidden"></div>
+      </div>
+      <button type="button" class="guest" onclick="continueAsGuest()">Continue as guest</button>
+    </div>
+  </div>
+</div>
 
-        <!-- Services Grid -->
-        <div class="max-w-7xl mx-auto mb-12">
-            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <h2 class="text-sm font-semibold uppercase tracking-widest text-[#999]">Available Services <span id="serviceSummary" class="normal-case tracking-normal font-normal"></span></h2>
-                <div class="flex items-center gap-2">
-                    <label for="serviceSearch" class="sr-only">Filter services</label>
-                    <input id="serviceSearch" type="search" placeholder="Filter services…" autocomplete="off"
-                        class="px-3 py-1.5 border border-[#d1d5db] rounded-lg text-sm w-48 max-w-full" />
-                    <button id="refreshServices" type="button" class="px-3 py-1.5 border border-[#e0e0e0] rounded-lg text-sm text-[#666] hover:text-[#1a1a1a]" aria-label="Refresh services">Refresh</button>
-                </div>
-            </div>
-            <div id="servicesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" aria-busy="true">
-                <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
-            </div>
-        </div>
-    </main>
+<!-- Hub -->
+<main id="mainContent" class="wrap hidden">
+  <div class="intro">
+    <h1>Models on the studio GPU</h1>
+    <p>Open an app and its model loads onto the card. Only one model runs at a time, so while the GPU is busy every app pauses and opens again when it is free.</p>
+  </div>
 
-    <!-- Footer -->
-    <footer class="mt-auto border-t border-[#e0e0e0] bg-white py-6">
-        <div class="max-w-7xl mx-auto px-6 flex items-center justify-between">
-            <p class="text-[#aaa] text-sm">© 2026 GPU Polling</p>
-            <a class="text-[#aaa] hover:text-[#666] text-sm transition-colors" href="/gpu-polling/admin/"
-                target="_blank">Admin Console</a>
-        </div>
-    </footer>
+  <section class="monitor" id="monitor" data-s="unknown" aria-label="GPU status">
+    <div class="mon-state">
+      <div class="mon-head"><span class="led"></span><h2 id="monTitle">Checking the GPU…</h2></div>
+      <p class="mon-msg" id="monMsg">Reading status from the orchestrator.</p>
+      <span class="mon-note" id="monNote">Apps open when the GPU is free</span>
+    </div>
+    <div class="vram">
+      <div class="vram-top"><span>Video memory</span><b id="vUsed">–</b></div>
+      <div class="vbar" aria-hidden="true"><i class="ours" id="vOurs"></i><i class="ext" id="vExt"></i></div>
+      <div class="legend"><span><em style="background:var(--ours)"></em>Our models <span id="lOurs">–</span></span><span><em style="background:var(--ext)"></em>Other processes <span id="lExt">–</span></span><span id="lFree"></span></div>
+      <div class="stats">
+        <div class="stat"><span>GPU load</span><b class="mono" id="sUtil">–</b></div>
+        <div class="stat"><span>Running</span><b id="sActive">–</b></div>
+        <div class="stat"><span>Jobs waiting</span><b class="mono" id="sJobs">–</b></div>
+      </div>
+    </div>
+  </section>
 
-    <script>
-    const TOKEN_KEY = 'gpu_auth_token';
+  <div class="sh">
+    <h2>Apps</h2><span id="serviceSummary"></span>
+    <div class="tools">
+      <label for="serviceSearch" class="hidden">Filter apps</label>
+      <input id="serviceSearch" type="search" placeholder="Filter apps" autocomplete="off">
+      <button id="refreshServices" type="button" class="btn">Refresh</button>
+    </div>
+  </div>
+  <div id="servicesGrid" class="apps-grid" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+</main>
 
-    function getToken() { return localStorage.getItem(TOKEN_KEY); }
-    function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
-    function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+<footer><div class="wrap"><span>GPU-Polling · compute.explorug.online</span><a href="/gpu-polling/admin/">Admin console</a></div></footer>
+<div class="toast" id="toast" role="alert"></div>
 
-    function decodePayload(token) {
-        try {
-            const parts = token.split('.');
-            if (parts.length !== 3) return null;
-            return JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-        } catch { return null; }
-    }
-
-    function getUsername() {
-        const t = getToken(); if (!t) return null;
-        const p = decodePayload(t); return p ? p.username : null;
-    }
-
-    function isLoggedIn() {
-        const t = getToken(); if (!t) return false;
-        const p = decodePayload(t); if (!p) return false;
-        if (p.exp && Date.now() / 1000 > p.exp) { clearToken(); return false; }
-        return true;
-    }
-
-    function getAuthHeaders() {
-        return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (getToken() || '') };
-    }
-
-    function switchTab(tab) {
-        const isLogin = tab === 'login';
-        document.getElementById('loginForm').classList.toggle('hidden', !isLogin);
-        document.getElementById('signupForm').classList.toggle('hidden', isLogin);
-        document.getElementById('tabLogin').className = 'flex-1 py-3 text-sm font-medium border-b-2 ' +
-            (isLogin ? 'text-[#4f46e5] border-[#4f46e5]' : 'text-[#999] border-transparent hover:text-[#555]');
-        document.getElementById('tabSignup').className = 'flex-1 py-3 text-sm font-medium border-b-2 ' +
-            (!isLogin ? 'text-[#4f46e5] border-[#4f46e5]' : 'text-[#999] border-transparent hover:text-[#555]');
-    }
-
-    function showAuthError(id, msg) {
-        const el = document.getElementById(id);
-        el.textContent = msg; el.classList.remove('hidden');
-    }
-
-    async function handleLogin() {
-        const email = document.getElementById('loginEmail').value.trim();
-        const password = document.getElementById('loginPassword').value;
-        const btn = document.getElementById('loginBtn');
-        document.getElementById('loginError').classList.add('hidden');
-        if (!email || !password) { showAuthError('loginError', 'Please fill in all fields.'); return; }
-        btn.disabled = true; btn.textContent = 'Signing in…';
-        try {
-            const res = await fetch('auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
-            const data = await res.json();
-            if (res.ok) { onLoginSuccess(data); }
-            else { showAuthError('loginError', data.error || 'Sign in failed.'); }
-        } catch { showAuthError('loginError', 'Network error. Please try again.'); }
-        finally { btn.disabled = false; btn.textContent = 'Sign In'; }
-    }
-
-    async function handleSignup() {
-        const username = document.getElementById('signupUsername').value.trim();
-        const email = document.getElementById('signupEmail').value.trim();
-        const password = document.getElementById('signupPassword').value;
-        const btn = document.getElementById('signupBtn');
-        document.getElementById('signupError').classList.add('hidden');
-        if (!username || !email || !password) { showAuthError('signupError', 'Please fill in all fields.'); return; }
-        btn.disabled = true; btn.textContent = 'Creating account…';
-        try {
-            const res = await fetch('auth/signup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username, email, password}) });
-            const data = await res.json();
-            if (res.ok) { onLoginSuccess(data); }
-            else { showAuthError('signupError', data.error || 'Sign up failed.'); }
-        } catch { showAuthError('signupError', 'Network error. Please try again.'); }
-        finally { btn.disabled = false; btn.textContent = 'Create Account'; }
-    }
-
-    function onLoginSuccess(data) {
-        setToken(data.token);
-        // Redirect to return URL if present (came from another app)
-        const returnUrl = new URLSearchParams(window.location.search).get('return');
-        if (returnUrl) { window.location.href = returnUrl; return; }
-        showLoggedInUI(data.username);
-    }
-
-    const GUEST_KEY = 'gpu_guest_mode';
-    function isGuest() { return localStorage.getItem(GUEST_KEY) === 'true'; }
-    function setGuest() { localStorage.setItem(GUEST_KEY, 'true'); }
-    function clearGuest() { localStorage.removeItem(GUEST_KEY); }
-
-    function continueAsGuest() {
-        setGuest();
-        showLoggedInUI(null);
-    }
-
-    function showLoggedInUI(username) {
-        document.getElementById('authSection').classList.add('hidden');
-        document.getElementById('mainContent').classList.remove('hidden');
-        if (username) {
-            document.getElementById('historyLink').classList.remove('hidden');
-            document.getElementById('userBadge').classList.remove('hidden');
-            document.getElementById('userBadgeText').textContent = '@' + username;
-        } else {
-            document.getElementById('userBadge').classList.remove('hidden');
-            document.getElementById('userBadgeText').textContent = 'Guest';
-        }
-        if (window.hub) window.hub.loadServices();
-    }
-
-    document.getElementById('signOutBtn').addEventListener('click', () => {
-        clearToken(); clearGuest(); location.reload();
-    });
-
-    // Enter key support
-    ['loginEmail','loginPassword'].forEach(id =>
-        document.getElementById(id).addEventListener('keydown', e => { if (e.key==='Enter') handleLogin(); })
-    );
-    ['signupUsername','signupEmail','signupPassword'].forEach(id =>
-        document.getElementById(id).addEventListener('keydown', e => { if (e.key==='Enter') handleSignup(); })
-    );
-
-    // Init
-    (function() {
-        const returnUrl = new URLSearchParams(window.location.search).get('return');
-        if (isLoggedIn()) {
-            if (returnUrl) { window.location.href = returnUrl; return; }
-            showLoggedInUI(getUsername());
-        } else if (isGuest()) {
-            showLoggedInUI(null);
-        } else {
-            document.getElementById('authSection').classList.remove('hidden');
-        }
-    })();
-    </script>
-    <script src="static/app.js"></script>
+<script>
+const TOKEN_KEY = 'gpu_auth_token', GUEST_KEY = 'gpu_guest_mode';
+function ls(fn, fallback){ try { return fn(); } catch (e) { return fallback; } }
+function getToken() { return ls(() => localStorage.getItem(TOKEN_KEY), null); }
+function setToken(t) { ls(() => localStorage.setItem(TOKEN_KEY, t)); }
+function clearToken() { ls(() => localStorage.removeItem(TOKEN_KEY)); }
+function isGuest() { return ls(() => localStorage.getItem(GUEST_KEY) === 'true', false); }
+function setGuest() { ls(() => localStorage.setItem(GUEST_KEY, 'true')); }
+function clearGuest() { ls(() => localStorage.removeItem(GUEST_KEY)); }
+function decodePayload(token) {
+  try { const p = token.split('.'); if (p.length !== 3) return null;
+    return JSON.parse(atob(p[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return null; }
+}
+function getUsername() { const t = getToken(); const p = t && decodePayload(t); return p ? p.username : null; }
+function isLoggedIn() {
+  const t = getToken(); if (!t) return false; const p = decodePayload(t); if (!p) return false;
+  if (p.exp && Date.now() / 1000 > p.exp) { clearToken(); return false; } return true;
+}
+function switchTab(tab) {
+  const login = tab === 'login';
+  document.getElementById('loginForm').classList.toggle('hidden', !login);
+  document.getElementById('signupForm').classList.toggle('hidden', login);
+  document.getElementById('tabLogin').classList.toggle('active', login);
+  document.getElementById('tabSignup').classList.toggle('active', !login);
+}
+function showAuthError(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.classList.remove('hidden'); }
+async function authCall(path, body, errId, btn, label, busyLabel) {
+  document.getElementById(errId).classList.add('hidden');
+  btn.disabled = true; btn.textContent = busyLabel;
+  try {
+    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) onLoginSuccess(data);
+    else if (res.status === 429) showAuthError(errId, (data.error || 'Too many attempts') + '. Try again in ' + Math.ceil((data.retry_after_seconds || 60) / 60) + ' min.');
+    else showAuthError(errId, data.error || data.detail || 'That did not work. Check your details and try again.');
+  } catch { showAuthError(errId, 'Could not reach the server. Check your connection and try again.'); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+function handleLogin() {
+  const email = document.getElementById('loginEmail').value.trim(), password = document.getElementById('loginPassword').value;
+  if (!email || !password) return showAuthError('loginError', 'Enter your email and password.');
+  authCall('auth/login', { email, password }, 'loginError', document.getElementById('loginBtn'), 'Sign in', 'Signing in…');
+}
+function handleSignup() {
+  const username = document.getElementById('signupUsername').value.trim(), email = document.getElementById('signupEmail').value.trim(), password = document.getElementById('signupPassword').value;
+  if (!username || !email || !password) return showAuthError('signupError', 'Fill in all three fields.');
+  authCall('auth/signup', { username, email, password }, 'signupError', document.getElementById('signupBtn'), 'Create account', 'Creating account…');
+}
+function onLoginSuccess(data) {
+  setToken(data.token);
+  const ret = new URLSearchParams(location.search).get('return');
+  if (ret) { location.href = ret; return; }
+  showLoggedInUI(data.username);
+}
+function continueAsGuest() { setGuest(); showLoggedInUI(null); }
+function showLoggedInUI(username) {
+  document.getElementById('authSection').classList.add('hidden');
+  document.getElementById('mainContent').classList.remove('hidden');
+  document.getElementById('userBadge').classList.remove('hidden');
+  document.getElementById('userBadgeText').textContent = username ? '@' + username : 'Guest';
+  document.getElementById('historyLink').classList.toggle('hidden', !username);
+  if (window.hub) window.hub.loadServices();
+}
+document.getElementById('signOutBtn').addEventListener('click', () => { clearToken(); clearGuest(); location.reload(); });
+['loginEmail','loginPassword'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); }));
+['signupUsername','signupEmail','signupPassword'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') handleSignup(); }));
+(function () {
+  const ret = new URLSearchParams(location.search).get('return');
+  if (isLoggedIn()) { if (ret) { location.href = ret; return; } showLoggedInUI(getUsername()); }
+  else if (isGuest()) showLoggedInUI(null);
+  else document.getElementById('authSection').classList.remove('hidden');
+})();
+</script>
+<script src="static/app.js"></script>
 </body>
-
 </html>

@@ -42,6 +42,15 @@ FRONTEND_SERVICES = {
         "description": "Generate images with Z-Image model",
         "app_id": "z-image"
     },
+    "qwen-edit": {
+        "name": "Qwen Image Edit",
+        "url": "/gpu-polling/qwen-edit/",
+        "container_name": "qwen-image-edit-ui",
+        "port": 7865,
+        "icon": "✏️",
+        "description": "Edit an image by describing the change in words",
+        "app_id": "qwen-image-edit"
+    },
     "qwen-variations": {
         "name": "Qwen Image Variations",
         "url": "/gpu-polling/qwen-variations/",
