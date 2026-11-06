@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -85,7 +84,13 @@ func adminAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		if r.Header.Get("X-Admin-Key") != adminAPIKey {
+		ip := clientIP(r)
+		if locked, wait := adminKeyLock.Locked(ip); locked {
+			tooManyRequests(w, "too many failed attempts", wait)
+			return
+		}
+		if !secureEqual(r.Header.Get("X-Admin-Key"), adminAPIKey) {
+			adminKeyLock.Fail(ip)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -218,26 +223,23 @@ func main() {
 	http.HandleFunc("/admin/metrics/summary", adminAuthMiddleware(adminSummaryHandler))
 	http.HandleFunc("/admin/config", adminAuthMiddleware(adminConfigHandler))
 
-	// Auto-cleanup: mark stale PROCESSING/QUEUED jobs as FAILED every 5 minutes.
-	// Jobs stuck longer than 15 minutes are always stale (max job timeout is 10 min).
+	// Auto-cleanup of orphaned jobs (see cleanupOrphanedJobs): never touches a job
+	// a live worker is still handling.
 	go func() {
 		for {
 			time.Sleep(5 * time.Minute)
-			res, err := db.Exec(
-				`UPDATE jobs SET status = 'FAILED', error_log = 'auto-cleaned: stale job'
-				 WHERE status IN ('PROCESSING', 'QUEUED')
-				   AND created_at < NOW() - INTERVAL '15 minutes'`,
-			)
-			if err != nil {
-				log.Printf("[CLEANUP] Failed to clean stale jobs: %v", err)
-			} else if n, _ := res.RowsAffected(); n > 0 {
-				log.Printf("[CLEANUP] Marked %d stale job(s) as FAILED", n)
-			}
+			cleanupOrphanedJobs()
 		}
 	}()
 
 	log.Println("[INFO] Orchestrator running on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	srv := &http.Server{
+		Addr:              ":8080",
+		Handler:           generalRateLimit(http.DefaultServeMux),
+		ReadHeaderTimeout: 10 * time.Second, // slowloris protection
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 // Helper function to get environment variables with defaults
@@ -266,6 +268,11 @@ func submitJobHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse JSON
+	if ok, wait := submitIPLimit.Allow(clientIP(r)); !ok {
+		tooManyRequests(w, "Too many submissions from your network", wait)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxSubmitBody)
 	var req SubmitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -1322,19 +1329,4 @@ func markPendingJobsAsFailed(queueName, errorMsg string) {
 	if count > 0 {
 		log.Printf("[CIRCUIT BREAKER] Marked %d pending jobs as FAILED for app %s", count, appID)
 	}
-}
-
-// clientIP returns the caller's IP, honouring the reverse proxy's X-Forwarded-For.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
-	if xr := r.Header.Get("X-Real-IP"); xr != "" {
-		return strings.TrimSpace(xr)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

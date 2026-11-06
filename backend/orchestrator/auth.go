@@ -23,6 +23,12 @@ const claimsContextKey contextKey = "claims"
 
 var jwtSecret []byte
 
+// dummyBcryptHash is a valid bcrypt hash (cost 10) used only to equalise timing.
+var dummyBcryptHash = func() string {
+	h, _ := bcrypt.GenerateFromPassword([]byte("timing-equaliser"), bcrypt.DefaultCost)
+	return string(h)
+}()
+
 // Claims is the JWT payload.
 type Claims struct {
 	Username string `json:"username"`
@@ -177,6 +183,16 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ip := clientIP(r)
+	if ok, wait := signupLimit.Allow(ip); !ok {
+		tooManyRequests(w, "too many sign-ups from your network, try later", wait)
+		return
+	}
+	if ok, wait := signupGlobalLimit.Allow("all"); !ok {
+		tooManyRequests(w, "sign-ups are temporarily paused, try later", wait)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBody)
 	var req SignupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -265,12 +281,34 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ip := clientIP(r)
+	if ok, wait := loginAttemptLimit.Allow(ip); !ok {
+		tooManyRequests(w, "too many login attempts, slow down", wait)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBody)
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
 		return
+	}
+	acct := strings.ToLower(strings.TrimSpace(req.Email))
+	if locked, wait := loginAccountLock.Locked(acct); locked {
+		tooManyRequests(w, "account temporarily locked after repeated failed logins", wait)
+		return
+	}
+	if locked, wait := loginIPLock.Locked(ip); locked {
+		tooManyRequests(w, "too many failed logins from your network", wait)
+		return
+	}
+	loginFailed := func() {
+		loginAccountLock.Fail(acct)
+		loginIPLock.Fail(ip)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid credentials"})
 	}
 
 	var userID, username, hash, role string
@@ -280,9 +318,10 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	`, strings.ToLower(strings.TrimSpace(req.Email))).Scan(&userID, &username, &hash, &role)
 
 	if err == sql.ErrNoRows {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid credentials"})
+		// Burn the same bcrypt time as a real check so response time doesn't reveal
+		// whether the account exists.
+		bcrypt.CompareHashAndPassword([]byte(dummyBcryptHash), []byte(req.Password))
+		loginFailed()
 		return
 	} else if err != nil {
 		log.Printf("[ERROR] Login DB error: %v", err)
@@ -291,11 +330,10 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid credentials"})
+		loginFailed()
 		return
 	}
+	loginAccountLock.Reset(acct)
 
 	db.Exec("UPDATE users SET last_login_at = NOW() WHERE id = $1", userID)
 

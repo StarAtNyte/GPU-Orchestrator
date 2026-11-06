@@ -19,18 +19,18 @@ type AppParameter struct {
 
 // AppConfig represents a single app configuration
 type AppConfig struct {
-	ID                    string         `yaml:"id"`
-	Name                  string         `yaml:"name"`
-	Type                  string         `yaml:"type"` // "local" or "modal"
-	Queue                 string         `yaml:"queue"`
-	Endpoint              string         `yaml:"endpoint"`
-	Description           string         `yaml:"description"`
-	GPUVramGB             int            `yaml:"gpu_vram_gb"`
-	DockerImage           string         `yaml:"docker_image"`
-	ContainerName         string         `yaml:"container_name"`
-	IdleTimeoutSeconds    int            `yaml:"idle_timeout_seconds"`
-	StartupTimeoutSeconds int            `yaml:"startup_timeout_seconds"`
-	TimeoutSeconds        int            `yaml:"timeout_seconds"`
+	ID                    string            `yaml:"id"`
+	Name                  string            `yaml:"name"`
+	Type                  string            `yaml:"type"` // "local" or "modal"
+	Queue                 string            `yaml:"queue"`
+	Endpoint              string            `yaml:"endpoint"`
+	Description           string            `yaml:"description"`
+	GPUVramGB             int               `yaml:"gpu_vram_gb"`
+	DockerImage           string            `yaml:"docker_image"`
+	ContainerName         string            `yaml:"container_name"`
+	IdleTimeoutSeconds    int               `yaml:"idle_timeout_seconds"`
+	StartupTimeoutSeconds int               `yaml:"startup_timeout_seconds"`
+	TimeoutSeconds        int               `yaml:"timeout_seconds"`
 	CleanupPort           int               `yaml:"cleanup_port"` // HTTP port for /cleanup endpoint (default: 8000)
 	Environment           map[string]string `yaml:"environment"`  // Extra env vars passed to the container (e.g. N_CTX, MODEL_DIR)
 	Volumes               []string          `yaml:"volumes"`      // Extra bind-mount strings ("host:container[:opts]")

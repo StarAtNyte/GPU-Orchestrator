@@ -53,6 +53,17 @@ def gpu_unavailable_response(response):
         "gpu": body.get("gpu"),
     }
 
+
+def client_headers(request, extra=None):
+    """Headers for orchestrator calls that carry the real visitor IP (for rate limiting)."""
+    h = dict(extra or {})
+    xff = request.headers.get("x-forwarded-for")
+    if not xff and request.client:
+        xff = request.client.host
+    if xff:
+        h["X-Forwarded-For"] = xff
+    return h
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -64,7 +75,7 @@ async def auth_login(request: Request):
     body = await request.body()
     try:
         response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
-                                 headers={"Content-Type": "application/json"}, timeout=10)
+                                 headers=client_headers(request, {"Content-Type": "application/json"}), timeout=10)
         return JSONResponse(content=response.json(), status_code=response.status_code)
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -76,7 +87,7 @@ async def auth_signup(request: Request):
     body = await request.body()
     try:
         response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
-                                 headers={"Content-Type": "application/json"}, timeout=10)
+                                 headers=client_headers(request, {"Content-Type": "application/json"}), timeout=10)
         return JSONResponse(content=response.json(), status_code=response.status_code)
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -130,7 +141,7 @@ async def submit_chat(chat_request: ChatRequest, request: Request):
                     "enable_web_search": "true" if chat_request.enable_web_search else "false",
                 },
             },
-            headers={"Authorization": auth_header},
+            headers=client_headers(request, {"Authorization": auth_header}),
             timeout=30,
         )
         if response.status_code == 503:
@@ -241,7 +252,7 @@ async def warmup(request: Request, model: str = "qwen35-chat"):
                 "app_id": app_id,
                 "params": {"warmup": "true"},
             },
-            headers={"Authorization": auth_header},
+            headers=client_headers(request, {"Authorization": auth_header}),
             timeout=30,
         )
         if response.status_code == 503:

@@ -72,6 +72,17 @@ FRONTEND_SERVICES = {
 }
 
 
+
+def client_headers(request, extra=None):
+    """Headers for orchestrator calls that carry the real visitor IP (for rate limiting)."""
+    h = dict(extra or {})
+    xff = request.headers.get("x-forwarded-for")
+    if not xff and request.client:
+        xff = request.client.host
+    if xff:
+        h["X-Forwarded-For"] = xff
+    return h
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the main hub."""
@@ -84,7 +95,7 @@ async def auth_login(request: Request):
     body = await request.body()
     try:
         response = requests.post(f"{ORCHESTRATOR_URL}/auth/login", data=body,
-                                 headers={"Content-Type": "application/json"}, timeout=10)
+                                 headers=client_headers(request, {"Content-Type": "application/json"}), timeout=10)
         return JSONResponse(content=response.json(), status_code=response.status_code)
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -96,7 +107,7 @@ async def auth_signup(request: Request):
     body = await request.body()
     try:
         response = requests.post(f"{ORCHESTRATOR_URL}/auth/signup", data=body,
-                                 headers={"Content-Type": "application/json"}, timeout=10)
+                                 headers=client_headers(request, {"Content-Type": "application/json"}), timeout=10)
         return JSONResponse(content=response.json(), status_code=response.status_code)
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -225,7 +236,7 @@ async def get_user_jobs(request: Request, app_id: Optional[str] = None, status: 
         response = requests.get(
             f"{ORCHESTRATOR_URL}/user/jobs",
             params=params,
-            headers={"Authorization": auth_header},
+            headers=client_headers(request, {"Authorization": auth_header}),
             timeout=10
         )
         if response.status_code == 200:
@@ -247,7 +258,7 @@ async def get_user_job_details(job_id: str, request: Request):
     try:
         response = requests.get(
             f"{ORCHESTRATOR_URL}/user/jobs/{job_id}",
-            headers={"Authorization": auth_header},
+            headers=client_headers(request, {"Authorization": auth_header}),
             timeout=10
         )
         if response.status_code == 200:
@@ -265,7 +276,7 @@ async def delete_user_job(job_id: str, request: Request):
     try:
         response = requests.delete(
             f"{ORCHESTRATOR_URL}/user/jobs/{job_id}",
-            headers={"Authorization": auth_header},
+            headers=client_headers(request, {"Authorization": auth_header}),
             timeout=10
         )
         if response.status_code == 200:

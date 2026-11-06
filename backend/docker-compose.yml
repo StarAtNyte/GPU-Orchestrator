@@ -13,7 +13,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
       POSTGRES_DB: ${POSTGRES_DB:-gpu_orchestrator}
     ports:
-      - "5433:5432"  # Using 5433 to avoid conflict with docmost
+      # Not exposed to the LAN: localhost + docker bridge only
+      - "127.0.0.1:5433:5432"
+      - "172.17.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -31,7 +33,9 @@ services:
     image: redis:7-alpine
     container_name: gpu-redis
     ports:
-      - "16379:6379"
+      # Not exposed to the LAN: localhost + docker bridge only
+      - "127.0.0.1:16379:6379"
+      - "172.17.0.1:16379:6379"
     networks:
       - backend-network
     restart: unless-stopped
@@ -50,7 +54,9 @@ services:
       ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
       ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
     ports:
-      - "12379:2379"
+      # Not exposed to the LAN: localhost + docker bridge only
+      - "127.0.0.1:12379:2379"
+      - "172.17.0.1:12379:2379"
     networks:
       - backend-network
     restart: unless-stopped

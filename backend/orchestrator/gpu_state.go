@@ -211,38 +211,54 @@ func computeGPUState() GPUState {
 	}
 	st.OrchVRAMGB, st.ExternalVRAMGB = round2(st.OrchVRAMGB), round2(st.ExternalVRAMGB)
 
+	decideState(&st, stateInputs{
+		processing: processing, loading: loading, warm: warm,
+		hasJob: hasJob, jobStatus: jobStatus, util: smi.util,
+	})
+	return st
+}
+
+// stateInputs are the facts the state decision depends on.
+type stateInputs struct {
+	processing, loading, warm, hasJob bool
+	jobStatus                         string
+	util                              float64
+}
+
+// decideState sets State/Message/IsBusy/IsAvailable/RetryAfterSec on st from the
+// gathered facts. Pure (no I/O) so it can be unit tested.
+func decideState(st *GPUState, in stateInputs) {
 	// External compute load: hardware is busy but none of our jobs are running.
-	externalActive := !processing && !loading && !hasJob && smi.util > externalUtilThreshold
+	externalActive := !in.processing && !in.loading && !in.hasJob && in.util > externalUtilThreshold
 
 	switch {
-	case processing || (hasJob && jobStatus == "PROCESSING"):
+	case in.processing || (in.hasJob && in.jobStatus == "PROCESSING"):
 		st.State, st.IsBusy = GPUStateBusy, true
-		st.Message = busyMessage(st)
+		st.Message = busyMessage(*st)
 		st.RetryAfterSec = 15
-	case loading:
+	case in.loading:
 		st.State, st.IsBusy = GPUStateLoading, true
 		st.Message = fmt.Sprintf("Loading model for %s", nameOf(st.ActiveApp))
 		st.RetryAfterSec = 20
-	case hasJob:
+	case in.hasJob:
 		st.State, st.IsBusy = GPUStateBusy, true
 		st.Message = fmt.Sprintf("A %s job is queued", nameOf(st.ActiveApp))
 		st.RetryAfterSec = 15
 	case externalActive:
 		st.State, st.IsBusy = GPUStateExternal, true
-		st.Message = fmt.Sprintf("GPU in use by another process (%.0f%% load, %.1f GB)", smi.util, st.ExternalVRAMGB)
+		st.Message = fmt.Sprintf("GPU in use by another process (%.0f%% load, %.1f GB)", in.util, st.ExternalVRAMGB)
 		st.RetryAfterSec = 30
-	case warm:
+	case in.warm:
 		st.State = GPUStateWarm
-		st.Message = fmt.Sprintf("Ready • model loaded • %.1f GB free", st.FreeVRAMGB)
+		st.Message = fmt.Sprintf("Ready \u2022 model loaded \u2022 %.1f GB free", st.FreeVRAMGB)
 	default:
 		st.State = GPUStateFree
-		st.Message = fmt.Sprintf("Free • %.1f GB available", st.FreeVRAMGB)
+		st.Message = fmt.Sprintf("Free \u2022 %.1f GB available", st.FreeVRAMGB)
 		if st.ExternalVRAMGB > 0.5 {
-			st.Message = fmt.Sprintf("Idle • %.1f GB free (%.1f GB held by other processes)", st.FreeVRAMGB, st.ExternalVRAMGB)
+			st.Message = fmt.Sprintf("Idle \u2022 %.1f GB free (%.1f GB held by other processes)", st.FreeVRAMGB, st.ExternalVRAMGB)
 		}
 	}
 	st.IsAvailable = !st.IsBusy
-	return st
 }
 
 func busyMessage(st GPUState) string {
@@ -275,18 +291,26 @@ func checkGPUForApp(appID string) (GPUState, bool, string) {
 	if !ok || app.Type != "local" || st.State == GPUStateUnknown {
 		return st, true, ""
 	}
-	// Enough VRAM for this model? A warm worker of any app can be offloaded, so
-	// count its VRAM as reclaimable.
+	if ok, reason := vramAllows(app, st); !ok {
+		st.RetryAfterSec = 30
+		return st, false, reason
+	}
+	return st, true, ""
+}
+
+// vramAllows reports whether app's model fits given the GPU state. A warm worker of
+// any app can be offloaded, so its VRAM counts as reclaimable.
+func vramAllows(app AppConfig, st GPUState) (bool, string) {
 	reclaimable := 0.0
 	if st.State == GPUStateWarm {
 		reclaimable = st.OrchVRAMGB
 	}
 	need := float64(app.GPUVramGB) + vramSafetyMarginGB
-	if app.GPUVramGB > 0 && st.FreeVRAMGB+reclaimable < need {
-		st.RetryAfterSec = 30
-		return st, false, fmt.Sprintf(
+	avail := st.FreeVRAMGB + reclaimable
+	if app.GPUVramGB > 0 && avail < need {
+		return false, fmt.Sprintf(
 			"Not enough GPU memory for %s: needs ~%d GB, %.1f GB available (%.1f GB held by other processes)",
-			app.Name, app.GPUVramGB, st.FreeVRAMGB+reclaimable, st.ExternalVRAMGB)
+			app.Name, app.GPUVramGB, avail, st.ExternalVRAMGB)
 	}
-	return st, true, ""
+	return true, ""
 }

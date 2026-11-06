@@ -44,11 +44,11 @@ type WorkerStatusResponse struct {
 
 // WorkerStatusInfo represents detailed worker information
 type WorkerStatusInfo struct {
-	WorkerID     string  `json:"worker_id"`
-	AppID        string  `json:"app_id"`
-	Status       string  `json:"status"`
-	GPUName      *string `json:"gpu_name"`
-	VRAMTotal    *int    `json:"vram_total_mb"`
+	WorkerID      string     `json:"worker_id"`
+	AppID         string     `json:"app_id"`
+	Status        string     `json:"status"`
+	GPUName       *string    `json:"gpu_name"`
+	VRAMTotal     *int       `json:"vram_total_mb"`
 	LastHeartbeat *time.Time `json:"last_heartbeat"`
 }
 
@@ -576,13 +576,13 @@ func adminGPUMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type MetricPoint struct {
-		Time         time.Time `json:"time"`
-		GPUID        int       `json:"gpu_id"`
-		Utilization  float64   `json:"utilization"`
-		VRAMUsed     float64   `json:"vram_used_mb"`
-		VRAMTotal    float64   `json:"vram_total_mb"`
-		Temperature  float64   `json:"temperature_c"`
-		PowerDraw    float64   `json:"power_draw_w"`
+		Time        time.Time `json:"time"`
+		GPUID       int       `json:"gpu_id"`
+		Utilization float64   `json:"utilization"`
+		VRAMUsed    float64   `json:"vram_used_mb"`
+		VRAMTotal   float64   `json:"vram_total_mb"`
+		Temperature float64   `json:"temperature_c"`
+		PowerDraw   float64   `json:"power_draw_w"`
 	}
 
 	metrics := []MetricPoint{}
