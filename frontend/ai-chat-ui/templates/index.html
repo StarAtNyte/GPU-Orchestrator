@@ -867,8 +867,57 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.12);
     }
 
+    /* ── Polish additions ── */
+    :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    textarea:focus-visible, .input-box:focus-within { outline: none; }
+    .chat-area { position: relative; }
+    .scroll-bottom-btn {
+      position: absolute; right: 24px; bottom: 170px; z-index: 20;
+      width: 38px; height: 38px; border-radius: 50%;
+      border: 1px solid var(--border-color); background: var(--bg-primary);
+      color: var(--text-primary); box-shadow: var(--shadow-md); cursor: pointer;
+      display: none; align-items: center; justify-content: center;
+    }
+    .scroll-bottom-btn.visible { display: flex; }
+    .scroll-bottom-btn:hover { background: var(--bg-elevated); }
+    .history-search {
+      margin: 0 14px 8px; padding: 7px 10px; font: inherit; font-size: 13px;
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-xs);
+      background: var(--bg-input); color: var(--text-primary);
+    }
+    .history-item-actions { display: flex; align-items: center; }
+    .history-item-ren {
+      background: none; border: none; cursor: pointer; color: var(--text-muted);
+      font-size: 13px; padding: 2px 6px; opacity: 0;
+    }
+    .history-item:hover .history-item-ren, .history-item-ren:focus-visible,
+    .history-item-del:focus-visible { opacity: 1; }
+    .history-item-ren:hover { color: var(--primary); }
+    .history-rename-input {
+      width: 100%; font: inherit; font-size: 13px; padding: 2px 4px;
+      border: 1px solid var(--primary); border-radius: 4px;
+      background: var(--bg-input); color: var(--text-primary);
+    }
+    .sidebar-backdrop { display: none; }
+    .model-status-badge.loading { animation: pulse 1.8s infinite; }
+    .inline-retry-btn {
+      margin-left: 10px; padding: 3px 10px; font: inherit; font-size: 12px;
+      border: 1px solid currentColor; border-radius: 12px; background: transparent;
+      color: inherit; cursor: pointer;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+    }
+    @media (hover: none) {
+      .history-item-del, .history-item-ren, .code-copy-btn { opacity: 1; }
+    }
+
     /* ── Responsive ── */
     @media (max-width: 768px) {
+      .sidebar-backdrop.visible { display: block; position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.45); }
+      .header { flex-wrap: wrap; gap: 6px; }
+      .header-actions { flex-wrap: wrap; gap: 6px; }
+      .scroll-bottom-btn { right: 14px; }
       .sidebar { position: fixed; z-index: 100; height: 100vh; }
       .sidebar.collapsed { width: 0; }
       .settings-panel { width: 260px; }
@@ -881,7 +930,8 @@
 <body>
 
 <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
-<aside class="sidebar" id="historySidebar">
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleHistory()"></div>
+<aside class="sidebar" id="historySidebar" aria-label="Conversation history">
   <div class="sidebar-brand">
     <div class="sidebar-logo"><span class="material-symbols-outlined" style="font-size:18px">chat</span></div>
     <div class="sidebar-brand-text">
@@ -895,6 +945,8 @@
     New Chat
   </button>
 
+  <input type="search" class="history-search" id="historySearch" placeholder="Search chats (Ctrl+K)"
+         aria-label="Search conversations" oninput="renderHistoryList()" />
   <div class="sidebar-section-label">Recent</div>
   <div class="history-list" id="historyList"></div>
 
@@ -913,7 +965,7 @@
   <!-- Header -->
   <div class="header">
     <div class="header-left">
-      <button class="header-toggle active" id="historyToggle" onclick="toggleHistory()" title="Toggle sidebar">
+      <button class="header-toggle active" id="historyToggle" onclick="toggleHistory()" title="Toggle sidebar" aria-label="Toggle sidebar">
         <span class="material-symbols-outlined">menu</span>
       </button>
       <div class="model-switcher" id="modelSwitcher">
@@ -927,12 +979,12 @@
         <span id="gpuStatusText" style="white-space:nowrap;">Checking GPU...</span>
       </div>
       <div class="status-dot" id="statusDot" title="Orchestrator status"></div>
-      <span id="modelStatusBadge" class="model-status-badge">Select a model to start</span>
-      <button class="btn" id="settingsToggle" onclick="toggleSettings()">
+      <span id="modelStatusBadge" class="model-status-badge" role="status" aria-live="polite">Select a model to start</span>
+      <button class="btn" id="settingsToggle" onclick="toggleSettings()" aria-label="Toggle settings">
         <span class="material-symbols-outlined" style="font-size:16px">tune</span>
         Settings
       </button>
-      <button class="btn" id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode">
+      <button class="btn" id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">
         <span class="material-symbols-outlined" style="font-size:16px" id="themeIcon">light_mode</span>
       </button>
     </div>
@@ -940,7 +992,7 @@
 
   <!-- Chat area -->
   <div class="chat-area">
-    <div class="messages" id="messages">
+    <div class="messages" id="messages" role="log" aria-live="polite">
       <!-- Model Selection Screen -->
       <div class="welcome" id="modelSelection" style="display:none">
         <div class="welcome-icon">
@@ -995,6 +1047,9 @@
       </div>
     </div>
 
+    <button class="scroll-bottom-btn" id="scrollBottomBtn" aria-label="Scroll to latest message" title="Scroll to bottom" onclick="forceScrollBottom()">
+      <span class="material-symbols-outlined">arrow_downward</span>
+    </button>
     <div class="status-bar" id="statusBar">
       <div class="spinner"></div>
       <span id="statusText">Sending…</span>
@@ -1011,16 +1066,16 @@
           onkeydown="handleKey(event)" oninput="autoResize(this)" rows="1"></textarea>
         <div class="input-actions-bar">
           <div class="input-actions-left">
-            <button class="input-icon-btn" onclick="document.getElementById('fileInput').click()" title="Attach files">
+            <button class="input-icon-btn" onclick="document.getElementById('fileInput').click()" title="Attach files" aria-label="Attach files">
               <span class="material-symbols-outlined">attach_file</span>
             </button>
           </div>
-          <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send (Enter)">
+          <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send (Enter)" aria-label="Send message">
             <span class="material-symbols-outlined">arrow_upward</span>
           </button>
         </div>
       </div>
-      <div class="input-hint">Enter to send · Shift+Enter for newline</div>
+      <div class="input-hint">Enter to send · Shift+Enter for newline · Esc to stop</div>
     </div>
   </div>
 
@@ -1365,8 +1420,18 @@ function getSettings() {
 // Input helpers
 // ═══════════════════════════════════════════════════════
 function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
 }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (generating) { stopGeneration(); }
+    else if (window.innerWidth <= 768 && historyOpen) toggleHistory();
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    if (!historyOpen) toggleHistory();
+    const hs = document.getElementById('historySearch'); if (hs) hs.focus();
+  }
+});
 
 function autoResize(el) {
   el.style.height = 'auto';
@@ -1562,14 +1627,14 @@ function setGenerating(on) {
   const attachBtn = document.querySelector('.input-icon-btn');
   if (on) {
     btn.classList.add('stop');
-    btn.title = 'Stop generation';
+    btn.title = 'Stop generation (Esc)'; btn.setAttribute('aria-label', 'Stop generation');
     btn.innerHTML = `<span class="material-symbols-outlined">stop</span>`;
     btn.onclick = stopGeneration;
     bar.classList.add('visible');
     if (attachBtn) attachBtn.disabled = true;
   } else {
     btn.classList.remove('stop');
-    btn.title = 'Send (Enter)';
+    btn.title = 'Send (Enter)'; btn.setAttribute('aria-label', 'Send message');
     btn.innerHTML = `<span class="material-symbols-outlined">arrow_upward</span>`;
     btn.onclick = sendMessage;
     bar.classList.remove('visible');
@@ -1586,6 +1651,7 @@ function stopGeneration() {
 
 async function sendMessage(prefillText) {
   if (generating || !modelReady) return;
+  stickToBottom = true;
   const input = document.getElementById('userInput');
   const text  = (prefillText !== undefined ? prefillText : input.value).trim();
   const hasAttachments = attachedFiles.length > 0;
@@ -2035,10 +2101,24 @@ function addCodeCopyButtons(container) {
   });
 }
 
-function scrollToBottom() {
+let stickToBottom = true;
+function _nearBottom(m) { return m.scrollHeight - m.scrollTop - m.clientHeight < 80; }
+function scrollToBottom(force) {
   const msgs = document.getElementById('messages');
-  msgs.scrollTop = msgs.scrollHeight;
+  if (force === true) stickToBottom = true;
+  if (stickToBottom) msgs.scrollTop = msgs.scrollHeight;
+  updateScrollBtn();
 }
+function forceScrollBottom() { scrollToBottom(true); }
+function updateScrollBtn() {
+  const msgs = document.getElementById('messages');
+  const b = document.getElementById('scrollBottomBtn');
+  if (b) b.classList.toggle('visible', !_nearBottom(msgs));
+}
+(function() {
+  const m = document.getElementById('messages');
+  m.addEventListener('scroll', () => { stickToBottom = _nearBottom(m); updateScrollBtn(); }, { passive: true });
+})();
 
 function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -2074,7 +2154,7 @@ function saveCurrentConversation() {
   if (currentConvId) {
     const idx = convs.findIndex(c => c.id === currentConvId);
     if (idx !== -1) {
-      convs[idx] = { ...convs[idx], title, messages: history.slice(), updatedAt: now };
+      convs[idx] = { ...convs[idx], title: convs[idx].renamed ? convs[idx].title : title, messages: history.slice(), updatedAt: now };
     } else {
       convs.unshift({ id: currentConvId, title, messages: history.slice(), createdAt: now, updatedAt: now });
     }
@@ -2099,14 +2179,18 @@ function toggleHistory() {
   historyOpen = !historyOpen;
   document.getElementById('historySidebar').classList.toggle('collapsed', !historyOpen);
   document.getElementById('historyToggle').classList.toggle('active', historyOpen);
+  const bd = document.getElementById('sidebarBackdrop');
+  if (bd) bd.classList.toggle('visible', historyOpen);
   if (historyOpen) renderHistoryList();
 }
 
 function renderHistoryList() {
   const list = document.getElementById('historyList');
-  const convs = loadAllConversations();
+  const all = loadAllConversations();
+  const q = ((document.getElementById('historySearch') || {}).value || '').trim().toLowerCase();
+  const convs = q ? all.filter(c => (c.title || '').toLowerCase().includes(q)) : all;
   if (convs.length === 0) {
-    list.innerHTML = '<div class="history-empty">No saved conversations yet.</div>';
+    list.innerHTML = '<div class="history-empty">' + (q ? 'No matching conversations.' : 'No saved conversations yet.') + '</div>';
     return;
   }
   list.innerHTML = convs.map(c => {
@@ -2119,7 +2203,10 @@ function renderHistoryList() {
         <div class="history-item-title">${escapeHtml(c.title)}</div>
         <div class="history-item-sub">${date} · ${msgs} message${msgs !== 1 ? 's' : ''}</div>
       </div>
-      <button class="history-item-del" onclick="deleteConversation('${escapeAttr(c.id)}')" title="Delete">×</button>
+      <div class="history-item-actions">
+        <button class="history-item-ren" onclick="renameConversation('${escapeAttr(c.id)}')" title="Rename" aria-label="Rename conversation">✎</button>
+        <button class="history-item-del" onclick="deleteConversation('${escapeAttr(c.id)}')" title="Delete" aria-label="Delete conversation">×</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -2157,10 +2244,43 @@ function loadConversation(id) {
     }
   }
 
-  scrollToBottom();
+  scrollToBottom(true);
+  if (window.innerWidth <= 768 && historyOpen) toggleHistory();
+}
+
+function renameConversation(id) {
+  const item = document.querySelector('.history-item[data-id="' + id.replace(/"/g, '') + '"]');
+  const titleEl = item && item.querySelector('.history-item-title');
+  if (!titleEl) return;
+  const convs = loadAllConversations();
+  const conv = convs.find(c => c.id === id);
+  if (!conv) return;
+  const inp = document.createElement('input');
+  inp.className = 'history-rename-input';
+  inp.value = conv.title || '';
+  inp.setAttribute('aria-label', 'Conversation title');
+  titleEl.replaceWith(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true;
+    if (ok && inp.value.trim()) {
+      conv.title = inp.value.trim().slice(0, 80);
+      conv.renamed = true;
+      saveAllConversations(convs);
+    }
+    renderHistoryList();
+  };
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+  });
+  inp.addEventListener('blur', () => finish(true));
+  inp.addEventListener('click', e => e.stopPropagation());
 }
 
 function deleteConversation(id) {
+  if (!confirm('Delete this conversation?')) return;
   const convs = loadAllConversations().filter(c => c.id !== id);
   saveAllConversations(convs);
   if (currentConvId === id) {
@@ -2257,6 +2377,11 @@ function toggleTheme() {
 }
 
 (function() {
+  if (window.innerWidth <= 768) {
+    historyOpen = false;
+    document.getElementById('historySidebar').classList.add('collapsed');
+    document.getElementById('historyToggle').classList.remove('active');
+  }
   const saved = localStorage.getItem('ai_chat_theme') || 'dark';
   applyTheme(saved);
   document.getElementById('enableWebSearch').checked = true;

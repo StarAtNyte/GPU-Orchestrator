@@ -97,6 +97,11 @@ func StartWorkerForApp(appID string) (string, error) {
 		return "", fmt.Errorf("app %s is not a local worker", appID)
 	}
 
+	// Never start a model while the GPU is reserved / in use.
+	if err := gpuStartPreflight(appID); err != nil {
+		return "", err
+	}
+
 	// Generate worker ID
 	workerID := appConfig.ContainerName
 	if workerID == "" {

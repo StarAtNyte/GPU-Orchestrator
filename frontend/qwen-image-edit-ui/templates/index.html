@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <base href="/gpu-polling/qwen-edit/">
     <title>Qwen Image Edit</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,234 +14,141 @@
         :root {
             --primary: #6366f1;
             --primary-dark: #4f46e5;
-            --gray-50: #f9fafb;
-            --gray-100: #f3f4f6;
-            --gray-200: #e5e7eb;
-            --gray-500: #6b7280;
-            --gray-600: #4b5563;
-            --gray-700: #374151;
-            --gray-800: #1f2937;
-            --radius: 8px;
+            --on-primary: #fff;
+            --bg: #f9fafb;
+            --surface: #fff;
+            --surface-2: #f3f4f6;
+            --border: #e5e7eb;
+            --text: #1f2937;
+            --text-2: #4b5563;
+            --muted: #6b7280;
+            --ok-bg: #dcfce7; --ok-fg: #166534;
+            --bad-bg: #fee2e2; --bad-fg: #991b1b;
+            --radius: 10px;
+            --ring: 0 0 0 3px rgba(99, 102, 241, .35);
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--gray-50);
-            min-height: 100vh;
-        }
-
-        .nav {
-            background: white;
-            border-bottom: 1px solid var(--gray-200);
-            padding: 16px 24px;
-        }
-
-        .nav-content {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .logo {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--gray-800);
-        }
-
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .status-online {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .status-offline {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .main-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-
-        .two-column-layout {
-            display: grid;
-            grid-template-columns: 400px 1fr;
-            gap: 24px;
-        }
-
-        .left-panel {
-            background: white;
-            border: 1px solid var(--gray-200);
-            border-radius: var(--radius);
-            padding: 24px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--gray-700);
-            margin-bottom: 8px;
-        }
-
-        .form-group input,
-        .form-group textarea {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid var(--gray-200);
-            border-radius: var(--radius);
-            font-family: 'Inter', sans-serif;
-            font-size: 14px;
-        }
-
-        .form-group textarea {
-            resize: vertical;
-            min-height: 100px;
-        }
-
-        .upload-area {
-            border: 2px dashed var(--gray-200);
-            border-radius: var(--radius);
-            padding: 40px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .upload-area:hover {
-            border-color: var(--primary);
-            background: var(--gray-50);
-        }
-
-        .upload-area.has-image {
-            padding: 10px;
-        }
-
-        .upload-area img {
-            max-width: 100%;
-            max-height: 200px;
-            border-radius: var(--radius);
-        }
-
-        .btn {
-            width: 100%;
-            padding: 14px 24px;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: var(--radius);
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .btn:hover {
-            background: var(--primary-dark);
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .right-panel {
-            background: white;
-            border: 1px solid var(--gray-200);
-            border-radius: var(--radius);
-            padding: 24px;
-            min-height: 500px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .placeholder {
-            text-align: center;
-            color: var(--gray-500);
-        }
-
-        .placeholder svg {
-            margin-bottom: 16px;
-            opacity: 0.3;
-        }
-
-        .result-image {
-            max-width: 100%;
-            max-height: 600px;
-            border-radius: var(--radius);
-        }
-
-        .loading {
-            text-align: center;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--gray-200);
-            border-top-color: var(--primary);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 16px;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary: #818cf8;
+                --primary-dark: #a5b4fc;
+                --on-primary: #111827;
+                --bg: #0f1115;
+                --surface: #181b21;
+                --surface-2: #20242c;
+                --border: #2d333d;
+                --text: #e5e7eb;
+                --text-2: #b6bcc7;
+                --muted: #98a1ae;
+                --ok-bg: #12301f; --ok-fg: #86efac;
+                --bad-bg: #3b1518; --bad-fg: #fca5a5;
+                --ring: 0 0 0 3px rgba(129, 140, 248, .4);
             }
         }
 
-        .result-actions {
-            display: flex;
-            gap: 12px;
-            margin-top: 16px;
-            justify-content: center;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
         }
 
-        .btn-secondary {
-            padding: 10px 20px;
-            background: white;
-            color: var(--gray-700);
-            border: 1px solid var(--gray-200);
-            border-radius: var(--radius);
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
+        :focus-visible { outline: none; box-shadow: var(--ring); }
+        [hidden] { display: none !important; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+        @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; } }
+
+        .nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; }
+        .nav-content { max-width: 1400px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .logo { font-size: 18px; font-weight: 600; }
+        .nav-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .nav-link { color: var(--text-2); text-decoration: none; font-size: 13px; font-weight: 500; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+        .nav-link:hover { background: var(--surface-2); }
+
+        .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+        #gpuStatusBadge { display: flex; align-items: center; gap: 8px; background: var(--surface-2); color: var(--text-2); }
+        #gpuStatusIndicator { width: 8px; height: 8px; border-radius: 50%; background: #FBBF24; animation: pulse 2s infinite; }
+        .status-online { background: var(--ok-bg); color: var(--ok-fg); }
+        .status-offline { background: var(--bad-bg); color: var(--bad-fg); }
+
+        .main-container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .two-column-layout { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 24px; align-items: start; }
+        @media (max-width: 860px) {
+            .two-column-layout { grid-template-columns: minmax(0, 1fr); }
+            .main-container { padding: 16px; }
+            .nav { padding: 12px 16px; }
         }
 
-        .btn-secondary:hover {
-            background: var(--gray-50);
-        }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
 
-        .error-msg {
-            background: #fee2e2;
-            color: #991b1b;
-            padding: 12px;
-            border-radius: var(--radius);
-            margin-top: 12px;
-            font-size: 14px;
+        .form-group { margin-bottom: 18px; }
+        .form-group label, .field-label { display: block; font-size: 14px; font-weight: 500; color: var(--text-2); margin-bottom: 6px; }
+        .hint { font-size: 12px; color: var(--muted); font-weight: 400; }
+        .form-group input, .form-group textarea {
+            width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+            font-family: inherit; font-size: 14px; background: var(--bg); color: var(--text);
         }
+        .form-group textarea { resize: vertical; min-height: 90px; }
+        .form-group input:focus, .form-group textarea:focus { border-color: var(--primary); }
+
+        .upload-area {
+            position: relative; border: 2px dashed var(--border); border-radius: var(--radius); padding: 28px 16px;
+            text-align: center; cursor: pointer; transition: border-color .15s, background .15s; color: var(--muted); background: var(--bg);
+        }
+        .upload-area:hover, .upload-area.drag-over { border-color: var(--primary); background: var(--surface-2); }
+        .upload-area.has-image { padding: 10px; border-style: solid; }
+        .upload-area img { max-width: 100%; max-height: 220px; border-radius: 8px; display: block; margin: 0 auto; }
+        .upload-area p { margin-top: 8px; font-size: 14px; }
+        .upload-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+        .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+        .link-btn:hover { text-decoration: underline; }
+
+        .btn { width: 100%; padding: 12px 20px; background: var(--primary); color: var(--on-primary); border: none; border-radius: var(--radius); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s; }
+        .btn:hover:not(:disabled) { background: var(--primary-dark); }
+        .btn:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+        .kbd-hint { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+        .btn-secondary { padding: 8px 16px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
+        .btn-secondary:hover { background: var(--surface-2); }
+        .btn-secondary[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); }
+
+        .error-msg { background: var(--bad-bg); color: var(--bad-fg); padding: 10px 12px; border-radius: var(--radius); margin-top: 12px; font-size: 14px; }
+
+        .right-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+        .right-panel { min-height: 460px; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .placeholder, .loading { text-align: center; color: var(--muted); max-width: 360px; }
+        .placeholder svg { margin-bottom: 12px; opacity: .35; }
+        .placeholder h3 { color: var(--text-2); font-size: 16px; margin-bottom: 4px; }
+        .placeholder ol { text-align: left; margin: 12px auto 0; padding-left: 20px; font-size: 13px; }
+
+        .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 14px; }
+        .elapsed { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; color: var(--text); }
+        .loading .btn-secondary { margin-top: 14px; }
+
+        #resultState { width: 100%; text-align: center; }
+        .result-stage { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+        .result-image { max-width: 100%; max-height: 600px; border-radius: 8px; display: block; }
+        .compare-top { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; border-radius: 8px; clip-path: inset(0 50% 0 0); pointer-events: none; }
+        .compare-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.4); pointer-events: none; }
+        .compare-tag { position: absolute; top: 8px; font-size: 11px; line-height: 1.4; padding: 2px 8px; border-radius: 10px; background: rgba(0,0,0,.6); color: #fff; }
+        .compare-range { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
+        .compare-range:focus-visible + .compare-line { box-shadow: 0 0 0 3px var(--primary); }
+        .result-actions { display: flex; gap: 8px; margin-top: 14px; justify-content: center; flex-wrap: wrap; }
+
+        .prompt-used { margin-top: 14px; padding: 10px 14px; background: var(--surface-2); border-radius: var(--radius); text-align: left; }
+        .prompt-used-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .prompt-used-text { font-size: 13px; color: var(--text-2); }
+
+        .recent h4 { font-size: 13px; font-weight: 500; color: var(--text-2); margin-bottom: 8px; }
+        .recent-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+        .recent-strip button { flex: none; width: 72px; height: 72px; border: 2px solid var(--border); border-radius: 8px; padding: 0; overflow: hidden; cursor: pointer; background: var(--surface-2); }
+        .recent-strip button[aria-current="true"] { border-color: var(--primary); }
+        .recent-strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
     </style>
 </head>
 
@@ -248,288 +156,402 @@
     <nav class="nav">
         <div class="nav-content">
             <div class="logo">Qwen Image Edit</div>
-            <div id="gpuStatusBadge" class="status-badge" style="display: flex; align-items: center; gap: 8px;">
-                <span id="gpuStatusIndicator" style="width: 8px; height: 8px; border-radius: 50%; background: #FBBF24; animation: pulse 2s infinite;"></span>
-                <span id="gpuStatusText">Checking GPU...</span>
-            </div>
-            <div id="statusBadge" class="status-badge status-offline">
-                <span id="statusText">Connecting...</span>
+            <div class="nav-right">
+                
+                <div id="gpuStatusBadge" class="status-badge" role="status" aria-live="polite">
+                    <span id="gpuStatusIndicator"></span>
+                    <span id="gpuStatusText">Checking GPU...</span>
+                </div>
+                <div id="statusBadge" class="status-badge status-offline" role="status">
+                    <span id="statusText">Connecting...</span>
+                </div>
             </div>
         </div>
     </nav>
 
-    <div class="main-container">
+    <main class="main-container">
         <div class="two-column-layout">
-            <div class="left-panel">
-                <form id="editForm">
+            <div class="card">
+                <form id="mainForm" novalidate>
                     <div class="form-group">
-                        <label>Upload Image</label>
-                        <div class="upload-area" id="uploadArea">
-                            <input type="file" id="imageInput" accept="image/*" style="display: none;">
+                        <span class="field-label" id="uploadLabel">Image to edit</span>
+                        <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-labelledby="uploadLabel" aria-describedby="uploadHelp">
+                            <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
                             <div id="uploadPlaceholder">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="1.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                     <polyline points="17 8 12 3 7 8" />
                                     <line x1="12" y1="3" x2="12" y2="15" />
                                 </svg>
-                                <p style="margin-top: 12px; color: var(--gray-500);">Click to upload or drag and drop</p>
+                                <p><strong>Click to upload</strong>, drag and drop, or paste</p>
+                                <p id="uploadHelp" class="hint">PNG, JPEG, WebP or GIF, up to 15 MB</p>
                             </div>
-                            <img id="previewImage" style="display: none;">
+                            <img id="previewImage" alt="Selected image preview" hidden>
+                        </div>
+                        <div class="upload-meta" id="uploadMeta" hidden>
+                            <span id="fileInfo"></span>
+                            <button type="button" class="link-btn" id="removeBtn">Remove</button>
                         </div>
                     </div>
-
                     <div class="form-group">
-                        <label for="prompt">Edit Instruction</label>
+                        <label for="prompt">Edit instruction</label>
                         <textarea id="prompt" placeholder="e.g., change rhino into tiger" required></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label for="negativePrompt">Negative Prompt (optional)</label>
+                        <label for="negativePrompt">Negative prompt <span class="hint">(optional)</span></label>
                         <input type="text" id="negativePrompt" placeholder="Things to avoid...">
                     </div>
 
                     <div class="form-group">
-                        <label for="steps">Steps (default: 4)</label>
-                        <input type="number" id="steps" value="4" min="1" max="20">
+                        <label for="steps">Steps <span class="hint">(default 4, 1 to 20)</span></label>
+                        <input type="number" id="steps" value="4" min="1" max="20" inputmode="numeric">
                     </div>
 
                     <button type="submit" class="btn" id="editBtn">Edit Image</button>
+                    <div class="kbd-hint">Ctrl/Cmd + Enter to submit</div>
                 </form>
-                <div id="errorMsg" class="error-msg" style="display: none;"></div>
+                <div id="errorMsg" class="error-msg" role="alert" hidden></div>
             </div>
 
-            <div class="right-panel">
-                <div id="placeholderState" class="placeholder">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="1.5">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                        <circle cx="8.5" cy="8.5" r="1.5" />
-                        <polyline points="21 15 16 10 5 21" />
-                    </svg>
-                    <h3>Edited Image Will Appear Here</h3>
-                    <p>Upload an image and provide edit instructions</p>
-                </div>
-
-                <div id="loadingState" class="loading" style="display: none;">
-                    <div class="spinner"></div>
-                    <p id="loadingText">Processing...</p>
-                    <p id="jobIdDisplay" style="font-size: 12px; color: var(--gray-500); margin-top: 8px;"></p>
-                </div>
-
-                <div id="resultState" style="display: none; text-align: center;">
-                    <img id="resultImage" class="result-image">
-                    <div class="result-actions">
-                        <button class="btn-secondary" id="downloadBtn">Download</button>
-                        <button class="btn-secondary" id="newBtn">Edit Another</button>
+            <div class="right-col">
+                <div class="card right-panel" aria-live="polite">
+                    <div id="placeholderState" class="placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        <h3>Your edited image will appear here</h3>
+                        <p>Describe the change you want and Qwen will apply it.</p>
+                        <ol><li>Add an image (upload, drop or paste)</li><li>Describe the edit</li><li>Press Edit Image</li></ol>
                     </div>
+
+                    <div id="loadingState" class="loading" hidden>
+                        <div class="spinner" aria-hidden="true"></div>
+                        <div class="elapsed" id="elapsed">0:00</div>
+                        <p id="loadingText">Processing...</p>
+                        <p id="jobIdDisplay" class="hint"></p>
+                        <button type="button" class="btn-secondary" id="cancelBtn">Stop waiting</button>
+                    </div>
+
+                    <div id="resultState" hidden>
+                        <div class="result-stage" id="resultStage">
+                            <img id="resultImage" class="result-image" alt="Result image">
+                            <img id="origImage" class="compare-top" alt="Original image" hidden>
+                            <span class="compare-tag" id="tagOrig" style="left:8px" hidden>Before</span>
+                            <span class="compare-tag" id="tagNew" style="right:8px" hidden>After</span>
+                            <input type="range" class="compare-range" id="compareRange" min="0" max="100" value="50" aria-label="Before and after comparison position" hidden>
+                            <div class="compare-line" id="compareLine" hidden></div>
+                        </div>
+
+                        <div class="result-actions">
+                            <button type="button" class="btn-secondary" id="compareBtn" aria-pressed="false">Compare with original</button>
+                            <button type="button" class="btn-secondary" id="copyBtn">Copy image</button>
+                            <button type="button" class="btn-secondary" id="downloadBtn">Download</button>
+                            <button type="button" class="btn-secondary" id="newBtn">Edit another</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card recent" id="recentBox" hidden>
+                    <h4>Recent results (this session)</h4>
+                    <div class="recent-strip" id="recentStrip"></div>
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <script>
-        const uploadArea = document.getElementById('uploadArea');
-        const imageInput = document.getElementById('imageInput');
-        const previewImage = document.getElementById('previewImage');
-        const uploadPlaceholder = document.getElementById('uploadPlaceholder');
-        const editForm = document.getElementById('editForm');
-        const editBtn = document.getElementById('editBtn');
-        const errorMsg = document.getElementById('errorMsg');
+        const $ = (id) => document.getElementById(id);
+        const STORE_KEY = 'qwen-edit-settings';
+        const MAX_BYTES = 15 * 1024 * 1024;
+        const uploadArea = $('uploadArea'), imageInput = $('imageInput'), previewImage = $('previewImage');
+        const uploadPlaceholder = $('uploadPlaceholder'), uploadMeta = $('uploadMeta'), fileInfo = $('fileInfo');
+        const mainForm = $('mainForm'), submitBtn = $('editBtn'), errorMsg = $('errorMsg');
+        const placeholderState = $('placeholderState'), loadingState = $('loadingState'), resultState = $('resultState');
+        const loadingText = $('loadingText'), jobIdDisplay = $('jobIdDisplay'), elapsedEl = $('elapsed');
+        const resultImage = $('resultImage'), origImage = $('origImage');
+        const compareBtn = $('compareBtn'), compareRange = $('compareRange'), compareLine = $('compareLine');
+        const BTN_LABEL = submitBtn.textContent;
 
-        const placeholderState = document.getElementById('placeholderState');
-        const loadingState = document.getElementById('loadingState');
-        const resultState = document.getElementById('resultState');
-        const loadingText = document.getElementById('loadingText');
-        const jobIdDisplay = document.getElementById('jobIdDisplay');
-        const resultImage = document.getElementById('resultImage');
-        const downloadBtn = document.getElementById('downloadBtn');
-        const newBtn = document.getElementById('newBtn');
-        const statusBadge = document.getElementById('statusBadge');
-        const statusText = document.getElementById('statusText');
+        let imageBase64 = null, imageDataUrl = null;
+        let pollToken = 0, timerId = null, startedAt = 0;
+        let recent = [], comparing = false;
 
-        let imageBase64 = null;
+        // ---- persisted settings (best effort) ----
+        const PERSIST = ['prompt', 'negativePrompt', 'steps'];
+        function loadSettings() {
+            try {
+                const s = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+                PERSIST.forEach(id => { if (s[id] !== undefined && $(id)) $(id).value = s[id]; });
+            } catch (_) { }
+        }
+        function saveSettings() {
+            try {
+                const s = {};
+                PERSIST.forEach(id => { s[id] = $(id).value; });
+                localStorage.setItem(STORE_KEY, JSON.stringify(s));
+            } catch (_) { }
+        }
+        loadSettings();
+        PERSIST.forEach(id => $(id).addEventListener('change', saveSettings));
 
-        // Auth check — uses Auth module (auth.js loaded at bottom of body)
-        function getUsername() {
-            return typeof Auth !== 'undefined' ? Auth.getUsername() : null;
+        // ---- helpers ----
+        function showError(msg) { errorMsg.textContent = msg; errorMsg.hidden = false; }
+        function clearError() { errorMsg.hidden = true; errorMsg.textContent = ''; }
+        function fmtSize(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+        function fmtTime(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+
+        function showState(name) {
+            placeholderState.hidden = name !== 'placeholder';
+            loadingState.hidden = name !== 'loading';
+            resultState.hidden = name !== 'result';
         }
 
-        uploadArea.addEventListener('click', () => imageInput.click());
+        function startTimer() {
+            stopTimer();
+            startedAt = Date.now();
+            elapsedEl.textContent = '0:00';
+            timerId = setInterval(() => { elapsedEl.textContent = fmtTime(Math.floor((Date.now() - startedAt) / 1000)); }, 1000);
+        }
+        function stopTimer() { if (timerId) { clearInterval(timerId); timerId = null; } }
 
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.style.borderColor = 'var(--primary)';
-        });
+        function setBusy(busy) {
+            submitBtn.disabled = busy;
+            submitBtn.textContent = busy ? 'Working...' : BTN_LABEL;
+        }
 
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.style.borderColor = 'var(--gray-200)';
-        });
+        function failJob(msg) {
+            pollToken++;
+            stopTimer();
+            showError(msg);
+            showState(lastResultUrl ? 'result' : 'placeholder');
+            setBusy(false);
+        }
 
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.style.borderColor = 'var(--gray-200)';
-            const file = e.dataTransfer.files[0];
-            if (file && file.type.startsWith('image/')) {
-                handleImage(file);
-            }
+        // ---- image input ----
+        uploadArea.addEventListener('click', (e) => { if (e.target !== imageInput) imageInput.click(); });
+        uploadArea.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); imageInput.click(); }
         });
+        ['dragenter', 'dragover'].forEach(ev => uploadArea.addEventListener(ev, (e) => { e.preventDefault(); uploadArea.classList.add('drag-over'); }));
+        ['dragleave', 'drop'].forEach(ev => uploadArea.addEventListener(ev, (e) => { e.preventDefault(); uploadArea.classList.remove('drag-over'); }));
+        uploadArea.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) handleImage(f); });
+        imageInput.addEventListener('change', (e) => { const f = e.target.files[0]; if (f) handleImage(f); });
+        document.addEventListener('paste', (e) => {
+            const items = (e.clipboardData && e.clipboardData.files) || [];
+            for (const f of items) { if (f.type.startsWith('image/')) { e.preventDefault(); handleImage(f); return; } }
+        });
+        $('removeBtn').addEventListener('click', clearImage);
 
-        imageInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                handleImage(file);
-            }
-        });
+        function clearImage() {
+            imageBase64 = imageDataUrl = null;
+            imageInput.value = '';
+            previewImage.hidden = true; previewImage.removeAttribute('src');
+            uploadPlaceholder.hidden = false; uploadMeta.hidden = true;
+            uploadArea.classList.remove('has-image');
+        }
 
         function handleImage(file) {
+            clearError();
+            if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { showError('Unsupported file type. Use PNG, JPEG, WebP or GIF.'); return; }
+            if (file.size > MAX_BYTES) { showError('That image is ' + fmtSize(file.size) + '. The limit is 15 MB.'); return; }
             const reader = new FileReader();
+            reader.onerror = () => showError('Could not read that file.');
             reader.onload = (e) => {
-                const dataUrl = e.target.result;
-                imageBase64 = dataUrl.split(',')[1];
-                previewImage.src = dataUrl;
-                previewImage.style.display = 'block';
-                uploadPlaceholder.style.display = 'none';
+                imageDataUrl = e.target.result;
+                imageBase64 = imageDataUrl.split(',')[1];
+                previewImage.src = imageDataUrl;
+                previewImage.hidden = false;
+                uploadPlaceholder.hidden = true;
                 uploadArea.classList.add('has-image');
+                fileInfo.textContent = (file.name || 'pasted image') + ' · ' + fmtSize(file.size);
+                uploadMeta.hidden = false;
             };
             reader.readAsDataURL(file);
         }
 
-        editForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            errorMsg.style.display = 'none';
+        function getAuth() {
+            return typeof Auth !== 'undefined' ? Auth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+        }
 
-            if (!imageBase64) {
-                errorMsg.textContent = 'Please upload an image first';
-                errorMsg.style.display = 'block';
-                return;
-            }
+        // ---- submit ----
+        function buildRequest() {
+            const prompt = $('prompt').value.trim();
+            if (!prompt) return { error: 'Please enter an edit instruction.' };
+            const steps = Math.min(20, Math.max(1, parseInt($('steps').value) || 4));
+            return {
+                url: 'api/edit',
+                body: { prompt, image_base64: imageBase64, negative_prompt: $('negativePrompt').value, steps, cfg_scale: 1.0 }
+            };
+        }
 
+        async function submitJob() {
+            clearError();
+            if (!imageBase64) { showError('Please add an image first.'); return; }
             if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { Auth.showModal(); return; }
+            const req = buildRequest();
+            if (req.error) { showError(req.error); return; }
 
-            const prompt = document.getElementById('prompt').value;
-            const negativePrompt = document.getElementById('negativePrompt').value;
-            const steps = parseInt(document.getElementById('steps').value) || 4;
-
-            editBtn.disabled = true;
-            placeholderState.style.display = 'none';
-            loadingState.style.display = 'block';
-            resultState.style.display = 'none';
+            setBusy(true);
+            showState('loading');
             loadingText.textContent = 'Submitting...';
+            jobIdDisplay.textContent = '';
+            startTimer();
+            const token = ++pollToken;
 
             try {
-                const headers = typeof Auth !== 'undefined' ? Auth.getAuthHeaders() : { 'Content-Type': 'application/json' };
-                const response = await fetch('api/edit', {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
-                        prompt,
-                        image_base64: imageBase64,
-                        negative_prompt: negativePrompt,
-                        steps,
-                        cfg_scale: 1.0
-                    })
-                });
-
-                const data = await response.json();
-
+                const response = await fetch(req.url, { method: 'POST', headers: getAuth(), body: JSON.stringify(req.body) });
+                let data = {};
+                try { data = await response.json(); } catch (_) { }
+                if (token !== pollToken) return;
                 if (data.success) {
-                    jobIdDisplay.textContent = `Job ID: ${data.job_id}`;
-                    loadingText.textContent = 'Processing...';
-                    pollStatus(data.job_id);
+                    jobIdDisplay.textContent = 'Job ID: ' + data.job_id;
+                    loadingText.textContent = 'Queued...';
+                    pollStatus(data.job_id, token, 0);
+                } else if (data.gpu_unavailable) {
+                    failJob(data.error || 'The GPU is currently in use. Please try again shortly.');
                 } else {
-                    throw new Error(data.error || 'Failed to submit job');
+                    failJob(data.error || data.detail || ('Failed to submit job (HTTP ' + response.status + ')'));
                 }
             } catch (err) {
-                errorMsg.textContent = err.message;
-                errorMsg.style.display = 'block';
-                loadingState.style.display = 'none';
-                placeholderState.style.display = 'block';
-                editBtn.disabled = false;
-            }
-        });
-
-        async function pollStatus(jobId) {
-            try {
-                const response = await fetch(`api/status/${jobId}`);
-                const data = await response.json();
-
-                if (data.status === 'COMPLETED') {
-                    loadingState.style.display = 'none';
-                    resultState.style.display = 'block';
-                    resultImage.src = `data:image/png;base64,${data.result.image_base64}`;
-                    editBtn.disabled = false;
-                } else if (data.status === 'FAILED') {
-                    throw new Error(data.error || 'Job failed');
-                } else {
-                    loadingText.textContent = `Status: ${data.status}`;
-                    setTimeout(() => pollStatus(jobId), 2000);
-                }
-            } catch (err) {
-                errorMsg.textContent = err.message;
-                errorMsg.style.display = 'block';
-                loadingState.style.display = 'none';
-                placeholderState.style.display = 'block';
-                editBtn.disabled = false;
+                if (token === pollToken) failJob('Could not reach the server: ' + err.message);
             }
         }
 
-        downloadBtn.addEventListener('click', () => {
+        mainForm.addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); submitJob(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                if (!submitBtn.disabled) mainForm.requestSubmit();
+            }
+        });
+
+        async function pollStatus(jobId, token, fails) {
+            if (token !== pollToken) return;
+            try {
+                const response = await fetch('api/status/' + jobId);
+                const data = await response.json();
+                if (token !== pollToken) return;
+                if (data.status === 'COMPLETED') {
+                    stopTimer();
+                    pollToken++;
+                    showResult(data);
+                    setBusy(false);
+                    return;
+                }
+                if (data.status === 'FAILED') { failJob(data.error || 'Job failed'); return; }
+                loadingText.textContent = data.status === 'PROCESSING' ? 'Processing...' : ('Status: ' + (data.status || 'waiting').toLowerCase());
+                setTimeout(() => pollStatus(jobId, token, 0), 2000);
+            } catch (err) {
+                if (token !== pollToken) return;
+                if (fails >= 4) { failJob('Lost connection while waiting for the job: ' + err.message); return; }
+                loadingText.textContent = 'Reconnecting...';
+                setTimeout(() => pollStatus(jobId, token, fails + 1), 3000);
+            }
+        }
+
+        $('cancelBtn').addEventListener('click', () => {
+            pollToken++;
+            stopTimer();
+            showState(lastResultUrl ? 'result' : 'placeholder');
+            setBusy(false);
+            showError('Stopped waiting. The job may still finish on the server.');
+        });
+
+        // ---- result ----
+        let lastResultUrl = null;
+        function setCompare(on) {
+            comparing = on && !!origUrlForResult;
+            compareBtn.setAttribute('aria-pressed', comparing ? 'true' : 'false');
+            [origImage, compareRange, compareLine, $('tagOrig'), $('tagNew')].forEach(el => { el.hidden = !comparing; });
+            if (comparing) updateCompare();
+        }
+        function updateCompare() {
+            const v = compareRange.value;
+            origImage.style.clipPath = 'inset(0 ' + (100 - v) + '% 0 0)';
+            compareLine.style.left = v + '%';
+        }
+        compareRange.addEventListener('input', updateCompare);
+        compareBtn.addEventListener('click', () => setCompare(!comparing));
+
+        let origUrlForResult = null;
+        function showResult(data, entry) {
+            const url = entry ? entry.url : 'data:image/png;base64,' + data.result.image_base64;
+            const orig = entry ? entry.orig : imageDataUrl;
+            const promptUsed = entry ? entry.prompt : (data.result && data.result.prompt_used);
+            lastResultUrl = url;
+            origUrlForResult = orig;
+            resultImage.src = url;
+            origImage.src = orig || '';
+            compareBtn.hidden = !orig;
+            setCompare(false);
+
+            showState('result');
+            if (!entry) {
+                recent.unshift({ url, orig, prompt: promptUsed });
+                recent = recent.slice(0, 8);
+            }
+            renderRecent();
+        }
+
+        function renderRecent() {
+            const strip = $('recentStrip');
+            strip.textContent = '';
+            recent.forEach((r, i) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.setAttribute('aria-label', 'Show result ' + (recent.length - i));
+                if (r.url === lastResultUrl) b.setAttribute('aria-current', 'true');
+                const img = document.createElement('img');
+                img.src = r.url; img.alt = '';
+                b.appendChild(img);
+                b.addEventListener('click', () => { clearError(); showResult(null, r); });
+                strip.appendChild(b);
+            });
+            $('recentBox').hidden = recent.length === 0;
+        }
+
+        $('downloadBtn').addEventListener('click', () => {
             const link = document.createElement('a');
             link.href = resultImage.src;
-            link.download = `qwen-edit-${Date.now()}.png`;
+            link.download = 'qwen-edit-' + Date.now() + '.png';
             link.click();
         });
 
-        newBtn.addEventListener('click', () => {
-            resultState.style.display = 'none';
-            placeholderState.style.display = 'block';
+        $('copyBtn').addEventListener('click', async () => {
+            const btn = $('copyBtn');
+            try {
+                const blob = await (await fetch(resultImage.src)).blob();
+                await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
+                btn.textContent = 'Copied';
+            } catch (_) {
+                btn.textContent = 'Copy not supported';
+            }
+            setTimeout(() => { btn.textContent = 'Copy image'; }, 1800);
         });
 
+        $('newBtn').addEventListener('click', () => {
+            clearError();
+            lastResultUrl = null;
+            showState('placeholder');
+            $('prompt').focus();
+        });
+
+        // ---- connection health (GPU status is handled by gpu-guard.js) ----
+        const statusBadge = $('statusBadge'), statusText = $('statusText');
         async function checkHealth() {
             try {
                 const response = await fetch('health');
                 const data = await response.json();
-                if (data.orchestrator === 'connected') {
-                    statusBadge.className = 'status-badge status-online';
-                    statusText.textContent = 'Connected';
-                } else {
-                    statusBadge.className = 'status-badge status-offline';
-                    statusText.textContent = 'Disconnected';
-                }
+                const ok = data.orchestrator === 'connected';
+                statusBadge.className = 'status-badge ' + (ok ? 'status-online' : 'status-offline');
+                statusText.textContent = ok ? 'Connected' : 'Disconnected';
             } catch {
                 statusBadge.className = 'status-badge status-offline';
                 statusText.textContent = 'Disconnected';
             }
-        }
-
-        const gpuIndicator = document.getElementById('gpuStatusIndicator');
-        const gpuText = document.getElementById('gpuStatusText');
-        async function checkGPUHealth() {
-            try {
-                const response = await fetch('api/gpu/health');
-                const data = await response.json();
-                if (data.status === 'ok') {
-                    const jobs = data.active_jobs || 0;
-                    const utilization = parseFloat(data.utilization_pct) || 0;
-                    if (data.is_available) {
-                        gpuIndicator.style.background = '#10B981'; gpuIndicator.style.animation = 'none';
-                        gpuText.textContent = `GPU Ready \u2022 ${data.free_vram_gb}GB free`;
-                    } else if (jobs > 0) {
-                        gpuIndicator.style.background = '#F97316'; gpuIndicator.style.animation = 'pulse 2s infinite';
-                        gpuText.textContent = `GPU Busy \u2022 ${jobs} job${jobs !== 1 ? 's' : ''} processing`;
-                    } else if (utilization > 30) {
-                        gpuIndicator.style.background = '#FBBF24'; gpuIndicator.style.animation = 'none';
-                        gpuText.textContent = `GPU Reserved \u2022 ${utilization.toFixed(1)}% utilized`;
-                    } else {
-                        gpuIndicator.style.background = '#10B981'; gpuIndicator.style.animation = 'none';
-                        gpuText.textContent = `GPU Idle \u2022 ${data.free_vram_gb}GB free`;
-                    }
-                } else {
-                    gpuIndicator.style.background = '#FBBF24'; gpuIndicator.style.animation = 'pulse 2s infinite';
-                    gpuText.textContent = 'GPU Status Unknown';
-                }
-            } catch { gpuIndicator.style.background = '#FBBF24'; gpuText.textContent = 'GPU Status Unknown'; }
         }
         checkHealth();
         setInterval(checkHealth, 10000);

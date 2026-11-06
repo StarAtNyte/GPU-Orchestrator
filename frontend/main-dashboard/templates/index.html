@@ -14,6 +14,7 @@
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
     </style>
+    <link rel="stylesheet" href="static/style.css" />
     <script id="tailwind-config">
         tailwind.config = {
             theme: {
@@ -45,9 +46,9 @@
             </div>
             <div class="flex items-center gap-6">
                 <a id="historyLink" href="history" class="hidden text-sm text-[#666] hover:text-[#1a1a1a] transition-colors">History</a>
-                <div id="systemStatusBadge" class="flex items-center gap-2">
-                    <span id="statusDot" class="w-2 h-2 rounded-full bg-yellow-400"></span>
-                    <span id="systemStatusText" class="text-[#666] text-sm">Connecting…</span>
+                <div id="systemStatusBadge" class="flex items-center gap-2" role="status" aria-live="polite">
+                    <span id="statusDot" class="w-2 h-2 rounded-full bg-yellow-400" aria-hidden="true"></span>
+                    <span id="systemStatusText" class="text-[#666] text-sm" title="GPU status">Connecting…</span>
                 </div>
                 <!-- User badge (shown when logged in) -->
                 <div id="userBadge" class="hidden flex items-center gap-3">
@@ -66,46 +67,46 @@
                 <p class="text-[#666]">Sign in to access AI services</p>
             </div>
             <!-- Tabs -->
-            <div class="flex border-b border-[#e0e0e0] mb-6">
-                <button id="tabLogin" onclick="switchTab('login')" class="flex-1 py-3 text-sm font-medium text-[#4f46e5] border-b-2 border-[#4f46e5]">Sign In</button>
-                <button id="tabSignup" onclick="switchTab('signup')" class="flex-1 py-3 text-sm font-medium text-[#999] border-b-2 border-transparent hover:text-[#555]">Create Account</button>
+            <div class="flex border-b border-[#e0e0e0] mb-6" role="tablist">
+                <button id="tabLogin" role="tab" onclick="switchTab('login')" class="flex-1 py-3 text-sm font-medium text-[#4f46e5] border-b-2 border-[#4f46e5]">Sign In</button>
+                <button id="tabSignup" role="tab" onclick="switchTab('signup')" class="flex-1 py-3 text-sm font-medium text-[#999] border-b-2 border-transparent hover:text-[#555]">Create Account</button>
             </div>
             <!-- Login form -->
             <div id="loginForm">
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-[#374151] mb-1">Email</label>
+                    <label for="loginEmail" class="block text-sm font-medium text-[#374151] mb-1">Email</label>
                     <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email"
                         class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
                 </div>
                 <div class="mb-6">
-                    <label class="block text-sm font-medium text-[#374151] mb-1">Password</label>
+                    <label for="loginPassword" class="block text-sm font-medium text-[#374151] mb-1">Password</label>
                     <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password"
                         class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
                 </div>
                 <button id="loginBtn" onclick="handleLogin()"
                     class="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">Sign In</button>
-                <div id="loginError" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
+                <div id="loginError" role="alert" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
             </div>
             <!-- Signup form -->
             <div id="signupForm" class="hidden">
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-[#374151] mb-1">Username</label>
+                    <label for="signupUsername" class="block text-sm font-medium text-[#374151] mb-1">Username</label>
                     <input id="signupUsername" type="text" placeholder="cooluser123" autocomplete="username"
                         class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
                 </div>
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-[#374151] mb-1">Email</label>
+                    <label for="signupEmail" class="block text-sm font-medium text-[#374151] mb-1">Email</label>
                     <input id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email"
                         class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
                 </div>
                 <div class="mb-6">
-                    <label class="block text-sm font-medium text-[#374151] mb-1">Password</label>
+                    <label for="signupPassword" class="block text-sm font-medium text-[#374151] mb-1">Password</label>
                     <input id="signupPassword" type="password" placeholder="Min. 8 characters" autocomplete="new-password"
                         class="w-full px-4 py-2.5 border border-[#d1d5db] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:border-transparent" />
                 </div>
                 <button id="signupBtn" onclick="handleSignup()"
                     class="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">Create Account</button>
-                <div id="signupError" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
+                <div id="signupError" role="alert" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600"></div>
             </div>
             <div class="mt-6 text-center">
                 <button onclick="continueAsGuest()" class="text-sm text-[#9ca3af] hover:text-[#6b7280] transition-colors">
@@ -116,18 +117,26 @@
     </div>
 
     <!-- Main content (shown when logged in) -->
-    <main id="mainContent" class="hidden flex-grow px-6 py-12">
+    <main id="mainContent" class="hidden flex-grow px-4 sm:px-6 py-8 sm:py-12">
         <!-- PageHeading -->
         <div class="text-center mb-12 max-w-2xl mx-auto">
-            <h2 class="text-4xl md:text-5xl font-bold mb-4 tracking-tight">AI Services</h2>
+            <h2 class="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 tracking-tight">AI Services</h2>
             <p class="text-[#666] text-lg">Manage your GPU generation and processing tasks from a centralized interface.</p>
         </div>
 
         <!-- Services Grid -->
         <div class="max-w-7xl mx-auto mb-12">
-            <h2 class="text-sm font-semibold uppercase tracking-widest text-[#999] mb-6">Available Services</h2>
-            <div id="servicesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                <div class="text-center text-[#aaa] py-12">Loading services…</div>
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <h2 class="text-sm font-semibold uppercase tracking-widest text-[#999]">Available Services <span id="serviceSummary" class="normal-case tracking-normal font-normal"></span></h2>
+                <div class="flex items-center gap-2">
+                    <label for="serviceSearch" class="sr-only">Filter services</label>
+                    <input id="serviceSearch" type="search" placeholder="Filter services…" autocomplete="off"
+                        class="px-3 py-1.5 border border-[#d1d5db] rounded-lg text-sm w-48 max-w-full" />
+                    <button id="refreshServices" type="button" class="px-3 py-1.5 border border-[#e0e0e0] rounded-lg text-sm text-[#666] hover:text-[#1a1a1a]" aria-label="Refresh services">Refresh</button>
+                </div>
+            </div>
+            <div id="servicesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" aria-busy="true">
+                <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
             </div>
         </div>
     </main>
@@ -249,7 +258,7 @@
             document.getElementById('userBadge').classList.remove('hidden');
             document.getElementById('userBadgeText').textContent = 'Guest';
         }
-        loadServices();
+        if (window.hub) window.hub.loadServices();
     }
 
     document.getElementById('signOutBtn').addEventListener('click', () => {

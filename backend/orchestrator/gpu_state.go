@@ -314,3 +314,85 @@ func vramAllows(app AppConfig, st GPUState) (bool, string) {
 	}
 	return true, ""
 }
+
+// ErrGPUReserved is returned when a worker must not start because the GPU is in use.
+type ErrGPUReserved struct{ Reason string }
+
+func (e *ErrGPUReserved) Error() string { return "GPU reserved: " + e.Reason }
+
+var (
+	preflightLogMu   sync.Mutex
+	preflightLastLog = map[string]time.Time{}
+)
+
+// gpuStartPreflight is the last line of defence before ANY worker container is
+// started. It refuses when:
+//   - one of our workers is mid-job or mid-load (one model on the GPU at a time),
+//   - a process outside the orchestrator is using the GPU's compute, or
+//   - the model would not fit in the VRAM that is actually free.
+//
+// Unlike computeGPUState it ignores our own queued jobs, because the job that is
+// waiting for this very worker must not block it.
+// If nvidia-smi cannot be read it fails closed.
+func gpuStartPreflight(appID string) error {
+	deny := func(reason string) error {
+		preflightLogMu.Lock()
+		if time.Since(preflightLastLog[appID]) > time.Minute {
+			preflightLastLog[appID] = time.Now()
+			log.Printf("[PREFLIGHT] Not starting %q: %s", appID, reason)
+		}
+		preflightLogMu.Unlock()
+		return &ErrGPUReserved{Reason: reason}
+	}
+
+	ourActive, warm := false, false
+	for _, w := range GetAllWorkers() {
+		switch w.State {
+		case WorkerStateProcessing, WorkerStateStarting:
+			ourActive = true
+		case WorkerStateWarm:
+			warm = true
+		}
+	}
+	if ourActive {
+		return deny("another worker is loading or processing a job")
+	}
+
+	smi, err := readNvidiaSMI()
+	if err != nil {
+		return deny("GPU status unavailable (" + err.Error() + ")")
+	}
+	if smi.util > externalUtilThreshold && !warm {
+		return deny(fmt.Sprintf("GPU in use by another process (%.0f%% load)", smi.util))
+	}
+
+	ours := orchestratorPIDs()
+	st := GPUState{FreeVRAMGB: smi.freeGB, UsedVRAMGB: smi.usedGB}
+	if warm {
+		st.State = GPUStateWarm
+	}
+	for pid, gb := range smi.procs {
+		if ours[pid] {
+			st.OrchVRAMGB += gb
+		} else {
+			st.ExternalVRAMGB += gb
+		}
+	}
+	if app, ok := appRegistry[appID]; ok {
+		if fits, reason := vramAllows(app, st); !fits {
+			return deny(reason)
+		}
+	}
+	return nil
+}
+
+// appIDForWorkerName maps an admin-supplied worker/container name to an app ID.
+func appIDForWorkerName(name string) string {
+	n := strings.TrimSuffix(strings.ToLower(name), "-worker")
+	for id, a := range appRegistry {
+		if strings.EqualFold(id, name) || strings.EqualFold(id, n) || strings.EqualFold(a.ContainerName, name) {
+			return id
+		}
+	}
+	return ""
+}

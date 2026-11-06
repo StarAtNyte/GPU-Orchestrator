@@ -4,6 +4,51 @@ let lottieAnimation = null;
 let animationData = null;
 let activeTab = 'text';
 let generatedCount = 0;
+let elapsedTimer = null;
+let pollFails = 0;
+let recent = [];
+const LIMITS = { image: 15 * 1024 * 1024, video: 50 * 1024 * 1024 };
+const STORE_KEY = 'omnilottie-settings';
+const PERSIST = ['textPrompt', 'imageDesc', 'maxTokens', 'temperature', 'topP', 'topK'];
+const SUBMIT_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Generate Animation';
+
+// ── Inline errors, elapsed timer, remembered settings ──────────────────────
+
+function showError(msg) {
+    document.getElementById('errorText').textContent = msg;
+    document.getElementById('errorMsg').hidden = false;
+}
+function clearError() { document.getElementById('errorMsg').hidden = true; }
+document.getElementById('errorClose').addEventListener('click', clearError);
+
+function startElapsed() {
+    stopElapsed();
+    const el = document.getElementById('elapsed');
+    const t0 = Date.now();
+    el.textContent = '0:00';
+    elapsedTimer = setInterval(() => {
+        const s = Math.floor((Date.now() - t0) / 1000);
+        el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 1000);
+}
+function stopElapsed() { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } }
+
+function saveSettings() {
+    try {
+        const o = {};
+        PERSIST.forEach(id => { o[id] = document.getElementById(id).value; });
+        o.useSampling = document.getElementById('useSampling').checked;
+        localStorage.setItem(STORE_KEY, JSON.stringify(o));
+    } catch (_) { /* storage unavailable */ }
+}
+(function loadSettings() {
+    try {
+        const o = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+        PERSIST.forEach(id => { if (typeof o[id] === 'string') document.getElementById(id).value = o[id]; });
+        if (typeof o.useSampling === 'boolean') document.getElementById('useSampling').checked = o.useSampling;
+    } catch (_) { /* ignore */ }
+    PERSIST.concat(['useSampling']).forEach(id => document.getElementById(id).addEventListener('change', saveSettings));
+})();
 
 // ── Accordion ──────────────────────────────────────────────────────────────
 
@@ -12,6 +57,7 @@ function toggleAccordion() {
     const body = document.getElementById('advancedBody');
     header.classList.toggle('open');
     body.classList.toggle('open');
+    header.setAttribute('aria-expanded', header.classList.contains('open') ? 'true' : 'false');
 }
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
@@ -27,6 +73,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
+function selectTab(tab) {
+    const b = document.querySelector('.tab-btn[data-tab="' + tab + '"]');
+    if (b) b.click();
+}
+
 function switchExamplesTab(tab) {
     document.querySelectorAll('.examples-tab-content').forEach(c => { c.style.display = 'none'; });
     const el = document.getElementById(tab + 'Examples');
@@ -41,11 +92,28 @@ function onFileSelect(type, input) {
     const preview = document.getElementById(type + 'DZPreview');
     const area = document.getElementById(type + 'DZ');
 
-    nameEl.textContent = file ? file.name : '';
-    if (file) { area.classList.add('has-file'); } else { area.classList.remove('has-file'); }
+    nameEl.textContent = '';
+    area.classList.remove('has-file');
     preview.innerHTML = '';
 
     if (!file) return;
+
+    const okType = type === 'image'
+        ? /^image\/(png|jpeg|webp)$/.test(file.type)
+        : (/^video\//.test(file.type) || /\.(mp4|avi|mov|gif|webp)$/i.test(file.name) || file.type === 'image/gif' || file.type === 'image/webp');
+    if (!okType) {
+        input.value = '';
+        showError(type === 'image' ? 'Unsupported image type. Use PNG, JPG or WebP.' : 'Unsupported video type. Use MP4, AVI, MOV, GIF or WebP.');
+        return;
+    }
+    if (file.size > LIMITS[type]) {
+        input.value = '';
+        showError('That file is ' + (file.size / 1048576).toFixed(1) + ' MB. The ' + type + ' limit is ' + (LIMITS[type] / 1048576) + ' MB.');
+        return;
+    }
+    clearError();
+    nameEl.textContent = file.name + ' \u00b7 ' + (file.size > 1048576 ? (file.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(file.size / 1024)) + ' KB');
+    area.classList.add('has-file');
 
     if (type === 'image' && file.type.startsWith('image/')) {
         const img = document.createElement('img');
@@ -85,6 +153,31 @@ function onFileSelect(type, input) {
             onFileSelect(type, input);
         }
     });
+});
+
+// Paste an image anywhere on the page to use it as the source image
+document.addEventListener('paste', e => {
+    const files = (e.clipboardData && e.clipboardData.files) || [];
+    for (const f of files) {
+        if (f.type.startsWith('image/')) {
+            e.preventDefault();
+            selectTab('image');
+            const dt = new DataTransfer();
+            dt.items.add(f);
+            const input = document.getElementById('imageFile');
+            input.files = dt.files;
+            onFileSelect('image', input);
+            return;
+        }
+    }
+});
+
+// Ctrl/Cmd+Enter submits (goes through the button so the GPU guard still applies)
+document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        const btn = document.getElementById('generateBtn');
+        if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+    }
 });
 
 // ── Health checks ──────────────────────────────────────────────────────────
@@ -159,6 +252,9 @@ checkHealth(); setInterval(checkHealth, 10000);
 // ── Logo home ──────────────────────────────────────────────────────────────
 
 document.getElementById('logoHome').addEventListener('click', () => ui.reset());
+document.getElementById('logoHome').addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ui.reset(); }
+});
 
 // ── UI object ──────────────────────────────────────────────────────────────
 
@@ -173,17 +269,18 @@ const ui = {
     },
 
     async handleSubmit() {
+        clearError();
         if (typeof Auth !== 'undefined' && !Auth.isLoggedIn()) { Auth.showModal(); return; }
 
         let data = {};
 
         if (activeTab === 'text') {
             const prompt = document.getElementById('textPrompt').value.trim();
-            if (!prompt) { alert('Please enter a prompt.'); return; }
+            if (!prompt) { showError('Please enter a prompt.'); document.getElementById('textPrompt').focus(); return; }
             data = { task_type: 'text', prompt };
         } else if (activeTab === 'image') {
             const input = document.getElementById('imageFile');
-            if (!input || !input.files[0]) { alert('Please upload an image.'); return; }
+            if (!input || !input.files[0]) { showError('Please add an image first.'); return; }
             data = {
                 task_type: 'image',
                 prompt: document.getElementById('imageDesc').value || 'A simple animation',
@@ -191,7 +288,7 @@ const ui = {
             };
         } else {
             const input = document.getElementById('videoFile');
-            if (!input || !input.files[0]) { alert('Please upload a video.'); return; }
+            if (!input || !input.files[0]) { showError('Please add a video first.'); return; }
             data = { task_type: 'video', video_base64: await this.fileToBase64(input.files[0]) };
         }
 
@@ -200,6 +297,7 @@ const ui = {
         data.top_p = parseFloat(document.getElementById('topP').value) || 0.25;
         data.top_k = parseInt(document.getElementById('topK').value) || 5;
         data.use_sampling = document.getElementById('useSampling').checked;
+        saveSettings();
 
         // Set UI to loading
         const btn = document.getElementById('generateBtn');
@@ -224,6 +322,8 @@ const ui = {
         overlay.classList.add('visible');
         loadingText.textContent = 'SUBMITTING JOB...';
         jobIdDisplay.textContent = '';
+        pollFails = 0;
+        startElapsed();
 
         try {
             const response = await fetch('api/generate', {
@@ -239,11 +339,12 @@ const ui = {
                 loadingText.textContent = 'QUEUED — waiting to process...';
                 this.startPolling();
             } else {
-                alert('Failed to submit: ' + (result.error || 'Unknown error'));
+                // includes gpu_unavailable: show the server's message and re-enable the form
+                showError(result.error || 'Failed to submit the job.');
                 this.resetLoading(btn);
             }
         } catch (err) {
-            alert('Error: ' + err.message);
+            showError('Could not reach the server: ' + err.message);
             this.resetLoading(btn);
         }
     },
@@ -254,6 +355,7 @@ const ui = {
             try {
                 const r = await fetch(`api/status/${currentJobId}`);
                 const d = await r.json();
+                pollFails = 0;
                 if (!d.success) return;
 
                 const loadingText = document.getElementById('loadingText');
@@ -268,11 +370,16 @@ const ui = {
                 } else if (d.status === 'FAILED') {
                     clearInterval(pollInterval);
                     pollInterval = null;
-                    alert('Job failed: ' + (d.error || 'Unknown error'));
-                    this.reset();
+                    showError('Job failed: ' + (d.error || 'Unknown error'));
+                    this.resetLoading(document.getElementById('generateBtn'));
                 }
             } catch (err) {
                 console.error('Polling error:', err);
+                if (++pollFails >= 5) {
+                    clearInterval(pollInterval); pollInterval = null;
+                    showError('Lost connection while waiting for the job. It may still finish on the server; check History.');
+                    this.resetLoading(document.getElementById('generateBtn'));
+                }
             }
         }, 2000);
     },
@@ -282,9 +389,10 @@ const ui = {
         const toolbar = document.getElementById('toolbar');
         const btn = document.getElementById('generateBtn');
 
+        stopElapsed();
         overlay.classList.remove('visible');
         btn.disabled = false;
-        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Generate Animation';
+        btn.innerHTML = SUBMIT_ICON;
 
         let resultData = data.result;
         if (typeof resultData === 'string') {
@@ -292,18 +400,21 @@ const ui = {
         }
 
         if (!resultData || !resultData.animation) {
-            alert('No animation in result');
+            showError('The job finished but returned no animation.');
             this.reset();
             return;
         }
 
         let anim = resultData.animation;
         if (typeof anim === 'string') {
-            try { anim = JSON.parse(anim); } catch(e) { alert('Invalid animation data'); this.reset(); return; }
+            try { anim = JSON.parse(anim); } catch(e) { showError('The animation data was invalid.'); this.reset(); return; }
         }
 
         animationData = anim;
         this.renderAnimation(anim);
+        document.getElementById('placeholder').classList.add('hidden');
+        const playBtn = document.getElementById('playBtn');
+        playBtn.textContent = 'Pause'; playBtn.setAttribute('aria-pressed', 'true');
 
         // Meta
         const tokens = resultData.tokens_generated || '—';
@@ -312,11 +423,13 @@ const ui = {
         document.getElementById('outputMeta').textContent = `${tokens} tokens \u00b7 ${layers} layers \u00b7 ${elapsed}`;
 
         // Stats bar
-        generatedCount++;
-        document.getElementById('statGenerated').textContent = generatedCount;
-        document.getElementById('statTokens').textContent = tokens;
-        document.getElementById('statLayers').textContent = layers;
-        document.getElementById('statDuration').textContent = elapsed;
+        if (!data.fromRecent) {
+            generatedCount++;
+            document.getElementById('statGenerated').textContent = generatedCount;
+            document.getElementById('statTokens').textContent = tokens;
+            document.getElementById('statLayers').textContent = layers;
+            document.getElementById('statDuration').textContent = elapsed;
+        }
 
         // JSON pane
         const jsonStr = JSON.stringify(anim, null, 2);
@@ -325,6 +438,12 @@ const ui = {
             lines.slice(0, 100).join('\n') + (lines.length > 100 ? '\n\u2026' : '');
 
         toolbar.classList.remove('hidden');
+
+        if (!data.fromRecent) {
+            recent.unshift({ anim, meta: document.getElementById('outputMeta').textContent });
+            recent = recent.slice(0, 8);
+        }
+        renderRecent();
     },
 
     renderAnimation(data) {
@@ -368,15 +487,19 @@ const ui = {
     },
 
     resetLoading(btn) {
+        stopElapsed();
         document.getElementById('loadingOverlay').classList.remove('visible');
-        document.getElementById('placeholder').classList.remove('hidden');
+        if (!animationData) document.getElementById('placeholder').classList.remove('hidden');
+        else document.getElementById('toolbar').classList.remove('hidden');
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Generate Animation';
+            btn.innerHTML = SUBMIT_ICON;
         }
     },
 
     reset() {
+        stopElapsed();
+        clearError();
         if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
         if (lottieAnimation) { lottieAnimation.destroy(); lottieAnimation = null; }
         animationData = null;
@@ -393,11 +516,57 @@ const ui = {
 
         const btn = document.getElementById('generateBtn');
         btn.disabled = false;
-        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Generate Animation';
+        btn.innerHTML = SUBMIT_ICON;
+        renderRecent();
     }
 };
 
 document.getElementById('downloadBtn').addEventListener('click', () => ui.downloadJson());
+
+document.getElementById('stopBtn').addEventListener('click', () => {
+    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    ui.resetLoading(document.getElementById('generateBtn'));
+    showError('Stopped waiting. The job may still finish on the server; check History.');
+});
+
+document.getElementById('playBtn').addEventListener('click', () => {
+    if (!lottieAnimation) return;
+    const btn = document.getElementById('playBtn');
+    const playing = btn.getAttribute('aria-pressed') === 'true';
+    if (playing) lottieAnimation.pause(); else lottieAnimation.play();
+    btn.setAttribute('aria-pressed', playing ? 'false' : 'true');
+    btn.textContent = playing ? 'Play' : 'Pause';
+});
+
+document.getElementById('copyJsonBtn').addEventListener('click', async () => {
+    if (!animationData) return;
+    const btn = document.getElementById('copyJsonBtn');
+    try { await navigator.clipboard.writeText(JSON.stringify(animationData)); btn.textContent = 'Copied'; }
+    catch (_) { btn.textContent = 'Copy failed'; }
+    setTimeout(() => { btn.textContent = 'Copy JSON'; }, 1500);
+});
+
+// ── Recent results strip (this session) ────────────────────────────────────
+
+function renderRecent() {
+    const strip = document.getElementById('recentStrip');
+    strip.textContent = '';
+    recent.forEach((r, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', 'Show result ' + (recent.length - i));
+        b.title = r.meta || '';
+        if (r.anim === animationData) b.setAttribute('aria-current', 'true');
+        b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="9 7 17 12 9 17 9 7"/></svg>';
+        b.addEventListener('click', () => {
+            clearError();
+            ui.showResult({ result: { animation: r.anim }, fromRecent: true });
+            document.getElementById('outputMeta').textContent = r.meta || '';
+        });
+        strip.appendChild(b);
+    });
+    document.getElementById('recentBox').hidden = recent.length === 0;
+}
 
 // ── History ────────────────────────────────────────────────────────────────
 
@@ -448,20 +617,26 @@ async function loadHistory() {
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 </div>
                 <div class="history-info">
-                    <div class="history-prompt">${prompt}</div>
-                    <div class="history-meta">${taskType} &middot; ${created} &middot; ${job.job_id ? job.job_id.slice(0,8) : ''}&hellip;</div>
+                    <div class="history-prompt"></div>
+                    <div class="history-meta"></div>
                 </div>
                 <span class="history-badge ${status}">${status}</span>
             `;
 
+            row.querySelector('.history-prompt').textContent = prompt;
+            row.querySelector('.history-meta').textContent = taskType + ' \u00b7 ' + created + ' \u00b7 ' + (job.job_id ? job.job_id.slice(0, 8) : '') + '\u2026';
+
             if (status === 'COMPLETED') {
+                row.tabIndex = 0;
+                row.setAttribute('role', 'button');
+                row.onkeydown = (ev) => { if (ev.key === 'Enter') row.click(); };
                 row.onclick = () => loadHistoryResult(job.job_id);
             }
 
             content.appendChild(row);
         });
     } catch (e) {
-        content.innerHTML = `<div style="text-align:center;color:var(--error);font-size:13px;padding:32px 0;">Failed to load history: ${e.message}</div>`;
+        content.innerHTML = `<div style="text-align:center;color:var(--error);font-size:13px;padding:32px 0;">Failed to load history.</div>`;
     }
 }
 
@@ -471,7 +646,7 @@ async function loadHistoryResult(jobId) {
         const data = await r.json();
         if (data.success) ui.showResult(data);
     } catch(e) {
-        alert('Failed to load result: ' + e.message);
+        showError('Failed to load result: ' + e.message);
     }
 }
 

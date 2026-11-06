@@ -469,6 +469,18 @@ func adminWorkerActionHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Same rule as automatic starts: never load a model onto a GPU that is in use.
+	if req.Action == "start" || req.Action == "switch" {
+		if err := gpuStartPreflight(appIDForWorkerName(req.WorkerName)); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false, "message": err.Error(), "error": "gpu_reserved",
+			})
+			return
+		}
+	}
+
 	var cmd *exec.Cmd
 	var actionDesc string
 

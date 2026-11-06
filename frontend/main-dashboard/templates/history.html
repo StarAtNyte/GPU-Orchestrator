@@ -10,6 +10,7 @@
     <style>
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
     </style>
+    <link rel="stylesheet" href="static/style.css" />
     <script id="tailwind-config">
         tailwind.config = {
             theme: {
@@ -205,6 +206,16 @@
                    (output.images && output.images[0]) || null;
         }
 
+        function showToast(msg, isError) {
+            let t = document.getElementById('uiToast');
+            if (!t) { t = document.createElement('div'); t.id = 'uiToast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+            t.className = 'ui-toast' + (isError ? ' error' : '');
+            t.textContent = msg;
+            t.hidden = false;
+            clearTimeout(showToast._t);
+            showToast._t = setTimeout(() => { t.hidden = true; }, 3500);
+        }
+
         async function deleteJob(jobId, event) {
             event.stopPropagation();
             if (!confirm('Remove this job from your history?')) return;
@@ -218,11 +229,11 @@
                     loadJobs();
                 } else {
                     const error = await response.json();
-                    alert('Failed to delete job: ' + (error.detail || 'Unknown error'));
+                    showToast('Failed to delete job: ' + (error.detail || 'Unknown error'), true);
                 }
             } catch (error) {
                 console.error('Error deleting job:', error);
-                alert('Failed to delete job');
+                showToast('Failed to delete job', true);
             }
         }
 
@@ -325,7 +336,7 @@
                             </body></html>
                         `);
                     } else {
-                        alert(`Job Details:\n\nID: ${job.job_id}\nService: ${getServiceName(job.app_id)}\nStatus: ${job.status}\nCreated: ${new Date(job.created_at).toLocaleString()}\n\nPrompt: ${JSON.stringify(job.params, null, 2)}`);
+                        showToast(`${getServiceName(job.app_id)} · ${job.status} · ${new Date(job.created_at).toLocaleString()} (no preview available)`);
                     }
                 })
                 .catch(err => {
