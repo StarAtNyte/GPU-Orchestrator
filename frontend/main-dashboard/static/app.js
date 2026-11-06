@@ -33,26 +33,19 @@ class GPUOrchestratorHub {
 
     async loadGPUStatus() {
         try {
-            const [gpuRes, workersRes] = await Promise.all([
-                this.fetchWithTimeout('api/gpu/health'),
-                this.fetchWithTimeout('api/workers')
-            ]);
+            const gpuRes = await this.fetchWithTimeout('api/gpu/health');
             const data = await gpuRes.json();
-            const workers = await workersRes.json();
 
-            const processing = (workers.workers || []).filter(w => w.State === 'PROCESSING' || w.State === 'STARTING');
-
-            if (processing.length > 0) {
-                this.setStatus('orange', `Busy — ${processing[0].AppID}`);
-            } else if (data.status === 'ok') {
-                const utilization = parseFloat(data.utilization_pct) || 0;
-                if (utilization > 30) {
-                    this.setStatus('yellow', 'Reserved');
-                } else {
-                    this.setStatus('emerald', 'All systems operational');
-                }
-            } else {
+            if (data.status !== 'ok' && !data.state) {
                 this.setStatus('red', 'Offline');
+            } else if (data.state === 'busy' || data.state === 'loading') {
+                this.setStatus('orange', data.message || 'GPU busy');
+            } else if (data.state === 'external') {
+                this.setStatus('red', data.message || 'GPU in use by another process');
+            } else if (data.state === 'unknown' || data.state === 'offline') {
+                this.setStatus('yellow', 'GPU status unknown');
+            } else {
+                this.setStatus('emerald', data.message || 'GPU free');
             }
         } catch {
             this.setStatus('red', 'Connection failed');
