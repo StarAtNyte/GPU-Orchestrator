@@ -16,8 +16,8 @@ h = bcrypt.hashpw(p.encode(), bcrypt.gensalt(12)).decode()
 c = psycopg2.connect(host=os.environ["POSTGRES_HOST"], port=os.environ.get("POSTGRES_PORT","5432"),
                      user=os.environ["POSTGRES_USER"], password=os.environ["POSTGRES_PASSWORD"], dbname=os.environ["POSTGRES_DB"])
 cur = c.cursor()
-cur.execute("""INSERT INTO admin_users (username, email, password_hash) VALUES (%s, NULLIF(%s, ''), %s)
-               ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = TRUE""", (u, e, h))
+cur.execute("""INSERT INTO admin_users (username, email, password_hash) VALUES (%s, %s, %s)
+               ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = TRUE""", (u, e or None, h))
 c.commit(); print("Admin account ready:", u)
 '
 echo "Sign in at https://compute.explorug.online/gpu-polling/admin/"
